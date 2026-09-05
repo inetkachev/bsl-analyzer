@@ -10,6 +10,7 @@
 //! documentation; no third-party reader of the format was consulted.
 
 pub(crate) mod common_module;
+pub(crate) mod form;
 pub(crate) mod helpers;
 pub(crate) mod metadata_object;
 pub(crate) mod properties;

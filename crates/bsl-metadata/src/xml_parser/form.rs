@@ -13,6 +13,9 @@ pub fn parse_form_xml(xml: &str) -> Result<Form> {
 
     let doc = roxmltree::Document::parse(xml)
         .map_err(|e| MetadataError::InvalidFormat(format!("Invalid form XML: {}", e)))?;
+    if super::edt::helpers::is_edt_form_document(&doc) {
+        return super::edt::form::parse_edt_form(&doc);
+    }
 
     let root = doc.root_element();
 
@@ -167,7 +170,7 @@ fn collect_events_recursive(node: roxmltree::Node<'_, '_>, handlers: &mut Vec<Fo
     }
 }
 
-fn tag_to_kind(tag: &str) -> FormElementKind {
+pub(super) fn tag_to_kind(tag: &str) -> FormElementKind {
     match tag {
         "Table" => FormElementKind::Table,
         "UsualGroup" => FormElementKind::UsualGroup,
@@ -233,6 +236,18 @@ fn collect_child_items(
 }
 
 pub fn parse_form_from_bsl_path(bsl_path: &std::path::Path) -> Result<Form> {
+    // EDT keeps `Form.form` beside the module; the configurator's `Form.xml`
+    // sits under `Ext/` and its metadata one directory up. The neighbour
+    // decides which layout this module belongs to.
+    if let Some(form_dir) = bsl_path.parent() {
+        if let Some(edt_form) = bsl_conventions::find_child_ci(
+            form_dir,
+            bsl_conventions::ConventionalName::FormForm.canonical(),
+        ) {
+            return parse_edt_form_beside(bsl_path, form_dir, &edt_form);
+        }
+    }
+
     let mut forms_dir = bsl_path.to_path_buf();
 
     for _ in 0..4 {
@@ -302,10 +317,68 @@ pub fn parse_form_from_bsl_path(bsl_path: &std::path::Path) -> Result<Form> {
     Ok(form)
 }
 
-struct FormMetadataInfo {
-    name: String,
-    form_type: FormType,
-    uuid: uuid::Uuid,
+/// EDT: `…/<Owner>/Forms/<Form>/Module.bsl` with `Form.form` beside it. The
+/// form's name is its directory; its type and uuid come from the `<forms>`
+/// entry of `<Owner>/<Owner>.mdo` two levels above `Forms/`, or from
+/// `CommonForms/<Form>/<Form>.mdo` for a common form.
+fn parse_edt_form_beside(
+    bsl_path: &std::path::Path,
+    form_dir: &std::path::Path,
+    form_xml: &std::path::Path,
+) -> Result<Form> {
+    let form_name = form_dir.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
+        MetadataError::InvalidFormat(format!(
+            "Cannot extract form name from: {}",
+            bsl_path.display()
+        ))
+    })?;
+    let text = std::fs::read_to_string(form_xml).map_err(|e| {
+        MetadataError::InvalidFormat(format!(
+            "Cannot read form XML at {}: {}",
+            form_xml.display(),
+            e
+        ))
+    })?;
+    let mut form = parse_form_xml(&text)?;
+    form.name = form_name.to_string();
+
+    let owner_descriptor = form_dir
+        .parent()
+        .and_then(|forms| {
+            let container = forms.parent()?;
+            let container_name = container.file_name()?.to_str()?;
+            let forms_name = forms.file_name()?.to_str()?;
+            (bsl_conventions::conventional_of(forms_name)
+                == Some(bsl_conventions::ConventionalName::Forms))
+            .then(|| {
+                bsl_conventions::find_child_stem_exact(
+                    container,
+                    container_name,
+                    bsl_conventions::MDO_EXTENSION,
+                )
+            })
+            .flatten()
+        })
+        .or_else(|| {
+            bsl_conventions::find_child_stem_exact(
+                form_dir,
+                form_name,
+                bsl_conventions::MDO_EXTENSION,
+            )
+        });
+    if let Some(text) = owner_descriptor.and_then(|p| std::fs::read_to_string(p).ok()) {
+        if let Some(identity) = super::edt::form::form_identity_from_owner(&text, form_name) {
+            form.form_type = identity.form_type;
+            form.uuid = identity.uuid;
+        }
+    }
+    Ok(form)
+}
+
+pub(super) struct FormMetadataInfo {
+    pub(super) name: String,
+    pub(super) form_type: FormType,
+    pub(super) uuid: uuid::Uuid,
 }
 
 fn parse_form_metadata_xml(xml: &str) -> Result<FormMetadataInfo> {
@@ -814,6 +887,45 @@ mod tests {
 
         assert_eq!(form.event_handler_names().len(), 1);
         assert!(form.is_handler("ПриСозданииНаСервере"));
+    }
+
+    #[test]
+    fn parse_form_from_bsl_path_reads_the_edt_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        let form_dir = dir.path().join("Catalogs/Справочник1/Forms/ФормаЭлемента");
+        std::fs::create_dir_all(&form_dir).unwrap();
+        std::fs::write(
+            dir.path().join("Catalogs/Справочник1/Справочник1.mdo"),
+            r#"<mdclass:Catalog xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" uuid="31b6e35b-6ac8-4bad-8581-be21e901c63b"><name>Справочник1</name><forms uuid="a42b835f-e936-4ec5-9d00-8cf0b095b0bb"><name>ФормаЭлемента</name></forms></mdclass:Catalog>"#,
+        )
+        .unwrap();
+        std::fs::write(
+            form_dir.join("Form.form"),
+            r#"<form:Form xmlns:form="http://g5.1c.ru/v8/dt/form"><handlers><event>OnOpen</event><name>ПриОткрытии</name></handlers></form:Form>"#,
+        )
+        .unwrap();
+        std::fs::write(form_dir.join("Module.bsl"), "").unwrap();
+        let form = parse_form_from_bsl_path(&form_dir.join("Module.bsl")).unwrap();
+        assert_eq!(form.name(), "ФормаЭлемента");
+        assert_eq!(form.uuid().to_string(), "a42b835f-e936-4ec5-9d00-8cf0b095b0bb");
+        assert!(form.is_handler("ПриОткрытии"));
+
+        let common_dir = dir.path().join("CommonForms/ОбщаяФорма1");
+        std::fs::create_dir_all(&common_dir).unwrap();
+        std::fs::write(
+            common_dir.join("ОбщаяФорма1.mdo"),
+            r#"<mdclass:CommonForm xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" uuid="1f3057c2-135f-44b2-9f86-34481fbc5596"><name>ОбщаяФорма1</name></mdclass:CommonForm>"#,
+        )
+        .unwrap();
+        std::fs::write(
+            common_dir.join("Form.form"),
+            r#"<form:Form xmlns:form="http://g5.1c.ru/v8/dt/form"/>"#,
+        )
+        .unwrap();
+        std::fs::write(common_dir.join("Module.bsl"), "").unwrap();
+        let common = parse_form_from_bsl_path(&common_dir.join("Module.bsl")).unwrap();
+        assert_eq!(common.name(), "ОбщаяФорма1");
+        assert_eq!(common.uuid().to_string(), "1f3057c2-135f-44b2-9f86-34481fbc5596");
     }
 
     #[test]
