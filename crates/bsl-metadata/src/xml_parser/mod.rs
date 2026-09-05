@@ -2,6 +2,7 @@ mod catalog;
 mod common_module;
 mod constant;
 mod defined_type;
+pub(crate) mod edt;
 mod enum_parser;
 mod event_subscription;
 mod form;

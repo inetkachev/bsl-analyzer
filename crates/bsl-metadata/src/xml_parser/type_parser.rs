@@ -65,11 +65,11 @@ static OBJECT_TYPE_MAP: &[(&str, MdoType)] = &[
     ("cfg:BusinessProcessRoutePointRef", MdoType::BusinessProcess),
 ];
 
-struct TypeQualifiers {
-    string_length: Option<u32>,
-    number_digits: Option<u8>,
-    number_fraction_digits: Option<u8>,
-    date_fractions: Option<String>,
+pub(crate) struct TypeQualifiers {
+    pub(crate) string_length: Option<u32>,
+    pub(crate) number_digits: Option<u8>,
+    pub(crate) number_fraction_digits: Option<u8>,
+    pub(crate) date_fractions: Option<String>,
 }
 
 impl TypeQualifiers {
@@ -131,10 +131,22 @@ pub(crate) fn parse_type_xml(type_node: roxmltree::Node<'_, '_>) -> Result<Attri
         .filter_map(|n| n.text())
         .collect();
 
+    parse_type_tokens(&type_strs, &type_set_strs, &qualifiers)
+}
+
+/// The configurator's type tokens (`xs:string`, `cfg:CatalogRef.Имя`, …) and
+/// type sets (`cfg:AnyIBRef`, `cfg:DefinedType.Имя`, …) into one attribute type.
+/// The EDT reader maps its bare tokens onto these spellings and calls this too,
+/// so every kind of reference is known in exactly one table.
+pub(crate) fn parse_type_tokens(
+    type_strs: &[&str],
+    type_set_strs: &[&str],
+    qualifiers: &TypeQualifiers,
+) -> Result<AttributeType> {
     let mut all_types = Vec::new();
 
-    for type_str in &type_strs {
-        let parsed_type = parse_single_type(type_str, &qualifiers)?;
+    for type_str in type_strs {
+        let parsed_type = parse_single_type(type_str, qualifiers)?;
         all_types.push(parsed_type);
     }
 

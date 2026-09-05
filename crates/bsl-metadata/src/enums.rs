@@ -74,6 +74,19 @@ pub enum ObjectBelonging {
     Unknown,
 }
 
+impl ObjectBelonging {
+    /// The configurator's `ObjectBelonging` / EDT's `objectBelonging` text; an
+    /// absent element (the common case for an object the configuration owns)
+    /// is `Own`, as the enum's default already says.
+    pub fn from_name(name: &str) -> Self {
+        match name.trim().fold_lower().as_str() {
+            "" | "own" | "собственный" => Self::Own,
+            "adopted" | "заимствованный" => Self::Adopted,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum SupportVariant {
     #[serde(rename = "NotEditable")]
@@ -146,6 +159,15 @@ mod tests {
         assert_eq!(ReturnValueReuse::from_name("DuringRequest"), ReturnValueReuse::DuringRequest);
         assert_eq!(ReturnValueReuse::from_name("навремязапроса"), ReturnValueReuse::DuringRequest);
         assert_eq!(ReturnValueReuse::from_name("unknown"), ReturnValueReuse::Unknown);
+    }
+
+    #[test]
+    fn object_belonging_from_name() {
+        assert_eq!(ObjectBelonging::from_name("Adopted"), ObjectBelonging::Adopted);
+        assert_eq!(ObjectBelonging::from_name("заимствованный"), ObjectBelonging::Adopted);
+        assert_eq!(ObjectBelonging::from_name("Own"), ObjectBelonging::Own);
+        assert_eq!(ObjectBelonging::from_name(""), ObjectBelonging::Own);
+        assert_eq!(ObjectBelonging::from_name("Whatever"), ObjectBelonging::Unknown);
     }
 
     #[test]
