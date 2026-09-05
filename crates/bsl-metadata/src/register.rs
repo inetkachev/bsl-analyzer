@@ -177,6 +177,9 @@ pub struct Register {
 
     #[serde(rename = "enableTotalsSliceLast", default)]
     enable_totals_slice_last: bool,
+
+    #[serde(rename = "objectBelonging", default)]
+    object_belonging: ObjectBelonging,
 }
 
 impl Register {
@@ -331,7 +334,7 @@ impl MdObject for Register {
     }
 
     fn object_belonging(&self) -> ObjectBelonging {
-        ObjectBelonging::Own
+        self.object_belonging
     }
 
     fn support_variant(&self) -> SupportVariant {
@@ -355,6 +358,7 @@ pub struct RegisterBuilder {
     register_type: Option<AccumulationRegisterType>,
     enable_totals_slice_first: bool,
     enable_totals_slice_last: bool,
+    object_belonging: ObjectBelonging,
 }
 
 impl RegisterBuilder {
@@ -423,6 +427,11 @@ impl RegisterBuilder {
         self
     }
 
+    pub fn object_belonging(mut self, value: ObjectBelonging) -> Self {
+        self.object_belonging = value;
+        self
+    }
+
     pub fn build(self) -> Register {
         Register {
             uuid: self.uuid.unwrap_or_else(Uuid::new_v4),
@@ -435,6 +444,7 @@ impl RegisterBuilder {
             register_type: self.register_type,
             enable_totals_slice_first: self.enable_totals_slice_first,
             enable_totals_slice_last: self.enable_totals_slice_last,
+            object_belonging: self.object_belonging,
         }
     }
 }

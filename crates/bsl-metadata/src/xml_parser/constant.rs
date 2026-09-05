@@ -33,6 +33,9 @@ pub fn parse_constant_xml(xml: &str) -> Result<MetadataObject> {
         let attr_type = parse_type_xml(type_node)?;
         mdo_obj.set_constant_type(attr_type);
     }
+    mdo_obj.object_belonging = child_text(props, "ObjectBelonging")
+        .map(crate::enums::ObjectBelonging::from_name)
+        .unwrap_or_default();
 
     Ok(mdo_obj)
 }

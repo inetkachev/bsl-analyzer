@@ -471,6 +471,11 @@ pub struct MetadataObject {
     pub register_records: Vec<(MdoType, Name)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uuid: Option<Uuid>,
+    /// Whether an extension borrowed this object from its base configuration
+    /// (`Adopted`) or declared it itself (`Own`). Read from the object's own
+    /// descriptor; the base–extension merge leaves the merged object `Own`.
+    #[serde(default)]
+    pub object_belonging: crate::enums::ObjectBelonging,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -813,6 +818,7 @@ impl MetadataObject {
             constant_type: None,
             register_records: Vec::new(),
             uuid: None,
+            object_belonging: crate::enums::ObjectBelonging::default(),
         }
     }
 
@@ -835,6 +841,7 @@ impl MetadataObject {
             constant_type: None,
             register_records: Vec::new(),
             uuid: None,
+            object_belonging: crate::enums::ObjectBelonging::default(),
         }
     }
 
@@ -858,6 +865,7 @@ impl MetadataObject {
             constant_type: None,
             register_records: Vec::new(),
             uuid: None,
+            object_belonging: crate::enums::ObjectBelonging::default(),
         }
     }
 

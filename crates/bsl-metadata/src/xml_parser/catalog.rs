@@ -211,6 +211,9 @@ fn parse_metadata_object_xml(xml: &str, mdo_type: MdoType) -> Result<MetadataObj
     if let Some(code_series_str) = &properties.code_series {
         mdo.set_code_series(parse_code_series(code_series_str));
     }
+    mdo.object_belonging = child_text(props_node, "ObjectBelonging")
+        .map(crate::enums::ObjectBelonging::from_name)
+        .unwrap_or_default();
 
     tracing::debug!(
         mdo_name = %mdo.name,

@@ -220,6 +220,11 @@ impl CommonModuleBuilder {
         self
     }
 
+    pub fn object_belonging(mut self, value: ObjectBelonging) -> Self {
+        self.object_belonging = value;
+        self
+    }
+
     pub fn protected(mut self, value: bool) -> Self {
         self.protected = value;
         self

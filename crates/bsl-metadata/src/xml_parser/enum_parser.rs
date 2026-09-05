@@ -46,6 +46,9 @@ pub fn parse_enum_xml(xml: &str) -> Result<MetadataObject> {
         }
     }
     mdo_obj.enum_values = enum_values;
+    mdo_obj.object_belonging = child_text(props, "ObjectBelonging")
+        .map(crate::enums::ObjectBelonging::from_name)
+        .unwrap_or_default();
 
     tracing::debug!(
         enum_name = %mdo_obj.name,

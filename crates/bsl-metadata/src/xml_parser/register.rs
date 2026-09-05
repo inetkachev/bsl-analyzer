@@ -97,6 +97,11 @@ fn parse_register_xml(xml: &str, mdo_type: MdoType) -> Result<Register> {
         .register_type(register_type)
         .enable_totals_slice_first(enable_totals_slice_first)
         .enable_totals_slice_last(enable_totals_slice_last)
+        .object_belonging(
+            child_text(props, "ObjectBelonging")
+                .map(crate::enums::ObjectBelonging::from_name)
+                .unwrap_or_default(),
+        )
         .build();
 
     tracing::debug!(

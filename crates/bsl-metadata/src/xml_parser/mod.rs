@@ -83,6 +83,21 @@ mod tests {
     }
 
     #[test]
+    fn designer_adopted_marker_is_read_on_objects_modules_and_registers() {
+        use crate::enums::ObjectBelonging;
+        let catalog = parse_catalog_xml(r#"<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"><Catalog uuid="00000000-0000-0000-0000-000000000001"><Properties><ObjectBelonging>Adopted</ObjectBelonging><Name>Товары</Name></Properties></Catalog></MetaDataObject>"#).unwrap();
+        assert_eq!(catalog.object_belonging, ObjectBelonging::Adopted);
+        let own = parse_catalog_xml(r#"<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"><Catalog uuid="00000000-0000-0000-0000-000000000001"><Properties><Name>Товары</Name></Properties></Catalog></MetaDataObject>"#).unwrap();
+        assert_eq!(own.object_belonging, ObjectBelonging::Own);
+        let module = parse_common_module_xml(r#"<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"><CommonModule uuid="00000000-0000-0000-0000-000000000002"><Properties><ObjectBelonging>Adopted</ObjectBelonging><Name>М</Name><Server>true</Server></Properties></CommonModule></MetaDataObject>"#).unwrap();
+        assert_eq!(module.object_belonging(), ObjectBelonging::Adopted);
+        let register = parse_information_register_xml(r#"<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"><InformationRegister uuid="00000000-0000-0000-0000-000000000003"><Properties><ObjectBelonging>Adopted</ObjectBelonging><Name>Р</Name></Properties></InformationRegister></MetaDataObject>"#).unwrap();
+        assert_eq!(register.object_belonging(), ObjectBelonging::Adopted);
+        let enum_ = parse_enum_xml(r#"<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"><Enum uuid="00000000-0000-0000-0000-000000000004"><Properties><ObjectBelonging>Adopted</ObjectBelonging><Name>П</Name></Properties></Enum></MetaDataObject>"#).unwrap();
+        assert_eq!(enum_.object_belonging, ObjectBelonging::Adopted);
+    }
+
+    #[test]
     fn test_parse_client_module() {
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.10">

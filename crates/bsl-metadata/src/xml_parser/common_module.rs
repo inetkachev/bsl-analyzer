@@ -34,6 +34,11 @@ pub fn parse_common_module_xml(xml: &str) -> Result<CommonModule> {
         .server_call(child_bool(props, "ServerCall"))
         .privileged(child_bool(props, "Privileged"))
         .return_values_reuse(return_values_reuse)
+        .object_belonging(
+            child_text(props, "ObjectBelonging")
+                .map(crate::enums::ObjectBelonging::from_name)
+                .unwrap_or_default(),
+        )
         .build();
 
     tracing::debug!(
