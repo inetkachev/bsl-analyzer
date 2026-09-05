@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<form:Form xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:core="http://g5.1c.ru/v8/dt/mcore" xmlns:form="http://g5.1c.ru/v8/dt/form">
+  <items xsi:type="form:FormGroup">
+    <name>ГруппаШапка</name>
+    <id>2</id>
+    <visible>true</visible>
+    <enabled>true</enabled>
+    <userVisible>
+      <common>true</common>
+    </userVisible>
+    <items xsi:type="form:FormField">
+      <name>Контрагент</name>
+      <id>3</id>
+      <visible>true</visible>
+      <enabled>true</enabled>
+      <userVisible>
+        <common>true</common>
+      </userVisible>
+      <dataPath xsi:type="form:DataPath">
+        <segments>Объект.Контрагент</segments>
+      </dataPath>
+      <extendedTooltip>
+        <name>КонтрагентExtendedTooltip</name>
+        <id>103</id>
+      </extendedTooltip>
+      <contextMenu>
+        <name>КонтрагентContextMenu</name>
+        <id>203</id>
+      </contextMenu>
+      <type>InputField</type>
+      <editMode>Enter</editMode>
+      <showInHeader>true</showInHeader>
+      <extInfo xsi:type="form:InputFieldExtInfo"/>
+    </items>
+    <type>UsualGroup</type>
+    <extInfo xsi:type="form:UsualGroupExtInfo">
+      <group>Vertical</group>
+    </extInfo>
+  </items>
+  <items xsi:type="form:Table">
+    <name>Товары</name>
+    <id>4</id>
+    <visible>true</visible>
+    <enabled>true</enabled>
+    <userVisible>
+      <common>true</common>
+    </userVisible>
+    <dataPath xsi:type="form:DataPath">
+      <segments>Объект.Товары</segments>
+    </dataPath>
+    <items xsi:type="form:FormField">
+      <name>ТоварыТовар</name>
+      <id>5</id>
+      <visible>true</visible>
+      <enabled>true</enabled>
+      <userVisible>
+        <common>true</common>
+      </userVisible>
+      <dataPath xsi:type="form:DataPath">
+        <segments>Объект.Товары.Товар</segments>
+      </dataPath>
+      <extendedTooltip>
+        <name>ТоварыТоварExtendedTooltip</name>
+        <id>105</id>
+      </extendedTooltip>
+      <contextMenu>
+        <name>ТоварыТоварContextMenu</name>
+        <id>205</id>
+      </contextMenu>
+      <type>InputField</type>
+      <editMode>Enter</editMode>
+      <showInHeader>true</showInHeader>
+      <extInfo xsi:type="form:InputFieldExtInfo"/>
+    </items>
+    <autoCommandBar>
+      <name>ТоварыКоманднаяПанель</name>
+      <id>304</id>
+    </autoCommandBar>
+    <extInfo xsi:type="form:TableExtInfo"/>
+  </items>
+  <attributes>
+    <name>Объект</name>
+    <id>1</id>
+    <valueType>
+      <types>DocumentObject.Документ1</types>
+    </valueType>
+    <main>true</main>
+    <view>
+      <common>true</common>
+    </view>
+    <edit>
+      <common>true</common>
+    </edit>
+  </attributes>
+  <handlers>
+    <event>OnOpen</event>
+    <name>ПриОткрытии</name>
+  </handlers>
+  <commandBarLocation>Auto</commandBarLocation>
+  <autoCommandBar>
+    <name>ФормаКоманднаяПанель</name>
+    <id>-1</id>
+  </autoCommandBar>
+</form:Form>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mdclass:Configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" xmlns:mdclassExtension="http://g5.1c.ru/v8/dt/metadata/mdclass/extension" uuid="2e476c57-4458-4457-ac04-f5fcd3765748">
+  <name>Расширение1</name>
+  <synonym>
+    <key>ru</key>
+    <value>Расширение 1</value>
+  </synonym>
+  <objectBelonging>Adopted</objectBelonging>
+  <extension xsi:type="mdclassExtension:ConfigurationExtension">
+    <defaultRunMode>Checked</defaultRunMode>
+    <usePurposes>Checked</usePurposes>
+    <defaultLanguage>Checked</defaultLanguage>
+    <compatibilityMode>Checked</compatibilityMode>
+  </extension>
+  <containedObjects classId="9cd510cd-abfc-11d4-9434-004095e12fc7" objectId="2d2ae180-9143-40a6-ad9b-1e6a6ea45f5b"/>
+  <keepMappingToExtendedConfigurationObjectsByIDs>true</keepMappingToExtendedConfigurationObjectsByIDs>
+  <namePrefix>рдт_</namePrefix>
+  <configurationExtensionCompatibilityMode>8.3.21</configurationExtensionCompatibilityMode>
+  <configurationExtensionPurpose>Customization</configurationExtensionPurpose>
+  <defaultRunMode>ManagedApplication</defaultRunMode>
+  <usePurposes>PersonalComputer</usePurposes>
+  <scriptVariant>Russian</scriptVariant>
+  <version>1.0.0.1</version>
+  <defaultLanguage>Language.Русский</defaultLanguage>
+  <compatibilityMode>8.3.21</compatibilityMode>
+  <languages uuid="7c646e26-ec6b-40c4-9352-bd18c1c5662c" extendedConfigurationObject="7c646e26-ec6b-40c4-9352-bd18c1c5662b">
+    <name>Русский</name>
+    <objectBelonging>Adopted</objectBelonging>
+    <extension xsi:type="mdclassExtension:LanguageExtension">
+      <extendedConfigurationObject>Checked</extendedConfigurationObject>
+      <languageCode>Checked</languageCode>
+    </extension>
+    <languageCode>ru</languageCode>
+  </languages>
+  <commonModules>CommonModule.ПервыйОбщийМодуль</commonModules>
+  <commonModules>CommonModule.рдт_Модуль</commonModules>
+  <catalogs>Catalog.Справочник1</catalogs>
+  <catalogs>Catalog.рдт_Справочник</catalogs>
+</mdclass:Configuration>

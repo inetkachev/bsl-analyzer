@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mdclass:ChartOfCharacteristicTypes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:core="http://g5.1c.ru/v8/dt/mcore" xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" uuid="a0b1c2d3-0000-4000-8000-000000000301">
+  <producedTypes>
+    <objectType typeId="a0b1c2d3-0000-4000-8000-000000000302" valueTypeId="a0b1c2d3-0000-4000-8000-000000000303"/>
+    <refType typeId="a0b1c2d3-0000-4000-8000-000000000304" valueTypeId="a0b1c2d3-0000-4000-8000-000000000305"/>
+    <selectionType typeId="a0b1c2d3-0000-4000-8000-000000000306" valueTypeId="a0b1c2d3-0000-4000-8000-000000000307"/>
+    <listType typeId="a0b1c2d3-0000-4000-8000-000000000308" valueTypeId="a0b1c2d3-0000-4000-8000-000000000309"/>
+    <managerType typeId="a0b1c2d3-0000-4000-8000-000000000310" valueTypeId="a0b1c2d3-0000-4000-8000-000000000311"/>
+    <containerType typeId="a0b1c2d3-0000-4000-8000-000000000312" valueTypeId="a0b1c2d3-0000-4000-8000-000000000313"/>
+  </producedTypes>
+  <name>ПланВидовХарактеристик1</name>
+  <synonym>
+    <key>ru</key>
+    <value>План видов характеристик 1</value>
+  </synonym>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Ref</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>DeletionMark</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Description</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Code</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>ValueType</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <codeLength>9</codeLength>
+  <descriptionLength>25</descriptionLength>
+  <codeType>String</codeType>
+  <codeAllowedLength>Variable</codeAllowedLength>
+  <type>
+    <types>String</types>
+    <types>Number</types>
+    <stringQualifiers>
+      <length>100</length>
+    </stringQualifiers>
+    <numberQualifiers>
+      <precision>10</precision>
+    </numberQualifiers>
+  </type>
+  <attributes uuid="a0b1c2d3-0000-4000-8000-000000000314">
+    <name>Реквизит1</name>
+    <synonym>
+      <key>ru</key>
+      <value>Реквизит1</value>
+    </synonym>
+    <type>
+      <types>Boolean</types>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </attributes>
+</mdclass:ChartOfCharacteristicTypes>

@@ -375,10 +375,10 @@ fn parse_edt_form_beside(
     Ok(form)
 }
 
-pub(super) struct FormMetadataInfo {
-    pub(super) name: String,
-    pub(super) form_type: FormType,
-    pub(super) uuid: uuid::Uuid,
+pub(crate) struct FormMetadataInfo {
+    pub(crate) name: String,
+    pub(crate) form_type: FormType,
+    pub(crate) uuid: uuid::Uuid,
 }
 
 fn parse_form_metadata_xml(xml: &str) -> Result<FormMetadataInfo> {

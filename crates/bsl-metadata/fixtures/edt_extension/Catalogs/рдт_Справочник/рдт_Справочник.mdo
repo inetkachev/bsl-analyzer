@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mdclass:Catalog xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:core="http://g5.1c.ru/v8/dt/mcore" xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" uuid="0a1b2c3d-0000-4000-8000-000000000901">
+  <producedTypes>
+    <objectType typeId="0a1b2c3d-0000-4000-8000-000000000902" valueTypeId="0a1b2c3d-0000-4000-8000-000000000903"/>
+    <refType typeId="0a1b2c3d-0000-4000-8000-000000000904" valueTypeId="0a1b2c3d-0000-4000-8000-000000000905"/>
+    <selectionType typeId="0a1b2c3d-0000-4000-8000-000000000906" valueTypeId="0a1b2c3d-0000-4000-8000-000000000907"/>
+    <listType typeId="0a1b2c3d-0000-4000-8000-000000000908" valueTypeId="0a1b2c3d-0000-4000-8000-000000000909"/>
+    <managerType typeId="0a1b2c3d-0000-4000-8000-000000000910" valueTypeId="0a1b2c3d-0000-4000-8000-000000000911"/>
+  </producedTypes>
+  <name>рдт_Справочник</name>
+  <synonym>
+    <key>ru</key>
+    <value>Справочник расширения</value>
+  </synonym>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Ref</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>DeletionMark</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Description</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Code</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <codeLength>9</codeLength>
+  <descriptionLength>25</descriptionLength>
+  <codeType>String</codeType>
+  <codeAllowedLength>Variable</codeAllowedLength>
+  <defaultObjectForm>Catalog.рдт_Справочник.Form.ФормаЭлемента</defaultObjectForm>
+  <attributes uuid="0a1b2c3d-0000-4000-8000-000000000912">
+    <name>Основание</name>
+    <synonym>
+      <key>ru</key>
+      <value>Основание</value>
+    </synonym>
+    <type>
+      <types>CatalogRef.Справочник1</types>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </attributes>
+  <forms uuid="0a1b2c3d-0000-4000-8000-000000000913">
+    <name>ФормаЭлемента</name>
+    <synonym>
+      <key>ru</key>
+      <value>ФормаЭлемента</value>
+    </synonym>
+    <usePurposes>PersonalComputer</usePurposes>
+    <usePurposes>MobileDevice</usePurposes>
+  </forms>
+</mdclass:Catalog>

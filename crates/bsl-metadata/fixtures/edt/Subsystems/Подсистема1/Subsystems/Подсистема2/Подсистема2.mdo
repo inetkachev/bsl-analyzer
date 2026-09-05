@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mdclass:Subsystem xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" uuid="e1a5b582-c7f3-432d-9006-7094b6415918">
+  <name>Подсистема2</name>
+  <synonym>
+    <key>ru</key>
+    <value>Подсистема 2</value>
+  </synonym>
+  <includeInCommandInterface>true</includeInCommandInterface>
+  <content>Catalog.СправочникСМенеджером</content>
+</mdclass:Subsystem>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mdclass:Catalog xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:core="http://g5.1c.ru/v8/dt/mcore" xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" xmlns:mdclassExtension="http://g5.1c.ru/v8/dt/metadata/mdclass/extension" uuid="dbbdb9d5-0d40-4195-8812-31ea0b0e85aa" extendedConfigurationObject="d11b89e1-90a2-47e7-b43f-7f231ec64b2f">
+  <producedTypes>
+    <objectType typeId="6072c3e9-927b-4191-8411-c4ab78157c03" valueTypeId="790716cf-0637-4f02-bbd7-fbfa9e99f422"/>
+    <refType typeId="b77b9d44-2415-474e-aa45-e276a51700cd" valueTypeId="c1bbaa5a-8ec0-411d-a146-470de3956803"/>
+    <selectionType typeId="543a843f-631d-44d4-b055-1cf64b43df29" valueTypeId="e6158f8f-9ab2-4d02-a086-acc76db1c09a"/>
+    <listType typeId="c8b3972f-9595-420b-b494-f6b9b714103a" valueTypeId="5bee141d-5866-40c9-989d-557641d9a701"/>
+    <managerType typeId="a80180e0-141c-468b-a23b-aba8eb610523" valueTypeId="71c612ee-ce10-4f51-95f6-0f32cd7c995f"/>
+  </producedTypes>
+  <name>Справочник1</name>
+  <objectBelonging>Adopted</objectBelonging>
+  <extension xsi:type="mdclassExtension:CatalogExtension">
+    <extendedConfigurationObject>Checked</extendedConfigurationObject>
+  </extension>
+  <attributes uuid="3040ed88-0ce7-43bc-a187-c8f9e5c577fe">
+    <name>рдт_Реквизит</name>
+    <synonym>
+      <key>ru</key>
+      <value>рдт_Реквизит</value>
+    </synonym>
+    <type>
+      <types>String</types>
+      <stringQualifiers>
+        <length>20</length>
+      </stringQualifiers>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </attributes>
+</mdclass:Catalog>

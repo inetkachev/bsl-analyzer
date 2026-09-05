@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mdclass:InformationRegister xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:core="http://g5.1c.ru/v8/dt/mcore" xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" uuid="59f8d329-f39c-4999-b470-ae9fc74511ac">
+  <producedTypes>
+    <selectionType typeId="c387437f-a95d-4753-a1fb-8d6965eec2bc" valueTypeId="8211696b-8027-49eb-b977-ffaf05d861a3"/>
+    <listType typeId="2285f2b4-ff53-433d-a053-4f7f1b9ff9e1" valueTypeId="ce098a9c-912e-4d57-99a8-47fa31755ed1"/>
+    <managerType typeId="d20f5b26-3f33-463b-b291-b5492ba56942" valueTypeId="9769ddac-6bc5-48ba-a303-e88cb871e2f0"/>
+    <recordSetType typeId="30420793-548f-4e33-baee-0939bfa6f9e8" valueTypeId="7b5aa08a-b96e-4655-874d-d32747dfb2fe"/>
+    <recordKeyType typeId="43d443b5-d1c5-4c6a-9eb1-66954713f4e7" valueTypeId="e9247a9c-9c1a-4c72-8463-e33ea59d849d"/>
+    <recordType typeId="64254993-8ff1-46d6-b108-fa183a95f561" valueTypeId="e1945c69-92fe-4951-adf9-9d0066d4db1b"/>
+    <recordManagerType typeId="5062b473-ea52-46aa-b4bd-713c3aa7a0b9" valueTypeId="d23f2daa-5db9-4d3a-99ff-d5f63f8e8432"/>
+  </producedTypes>
+  <name>РегистрСведений1</name>
+  <synonym>
+    <key>ru</key>
+    <value>Регистр сведений 1</value>
+  </synonym>
+  <editType>InDialog</editType>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Active</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>LineNumber</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Recorder</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Period</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <dataLockControlMode>Managed</dataLockControlMode>
+  <informationRegisterPeriodicity>Day</informationRegisterPeriodicity>
+  <writeMode>RecorderSubordinate</writeMode>
+  <mainFilterOnPeriod>true</mainFilterOnPeriod>
+  <resources uuid="e78d8b9f-e50c-42f3-aa4d-9f4b6522afd4">
+    <name>Ресурс1</name>
+    <synonym>
+      <key>ru</key>
+      <value>Ресурс1</value>
+    </synonym>
+    <type>
+      <types>Number</types>
+      <numberQualifiers>
+        <precision>10</precision>
+        <scale>2</scale>
+      </numberQualifiers>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </resources>
+  <attributes uuid="e78d8b9f-e50c-42f3-aa4d-9f4b6522afd5">
+    <name>Реквизит1</name>
+    <synonym>
+      <key>ru</key>
+      <value>Реквизит1</value>
+    </synonym>
+    <type>
+      <types>String</types>
+      <stringQualifiers>
+        <length>50</length>
+      </stringQualifiers>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </attributes>
+  <dimensions uuid="e78d8b9f-e50c-42f3-aa4d-9f4b6522afd3">
+    <name>Измерение1</name>
+    <synonym>
+      <key>ru</key>
+      <value>Измерение1</value>
+    </synonym>
+    <type>
+      <types>CatalogRef.Справочник1</types>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <denyIncompleteValues>true</denyIncompleteValues>
+    <master>true</master>
+    <indexing>Index</indexing>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </dimensions>
+</mdclass:InformationRegister>

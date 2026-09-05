@@ -3,7 +3,7 @@ use crate::error::Result;
 use crate::metadata_object::{MdoType, MetadataObject};
 use crate::traits::MdObject;
 use crate::xml_parser;
-use bsl_conventions::DirTree;
+use bsl_conventions::{DirTree, SourceFormat};
 use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,7 +26,8 @@ pub fn load_from_directory(path: impl AsRef<Path>) -> Result<Configuration> {
         );
     }
 
-    let loaded = off_exclusive_pool(|| load_all_metadata_parallel(path));
+    let format = SourceFormat::of_directory(path);
+    let loaded = off_exclusive_pool(|| load_all_metadata_parallel(path, format));
     let mut config = build_configuration(loaded);
     // An export root holds no collection at all; its one object is the whole
     // configuration this root contributes to a visibility chain.
@@ -35,6 +36,7 @@ pub fn load_from_directory(path: impl AsRef<Path>) -> Result<Configuration> {
     }
 
     tracing::info!(
+        ?format,
         common_modules = config.common_modules().len(),
         metadata_objects = config.metadata_objects().len(),
         registers = config.registers().len(),
@@ -88,6 +90,129 @@ fn collection_dir(tree: &dyn DirTree, root: &Path, name: &str) -> std::path::Pat
     bsl_conventions::find_child_ci_in(tree, root, name).unwrap_or_else(|| root.join(name))
 }
 
+/// EDT: every object of a collection is a directory holding `<name>.mdo`.
+/// The descriptor's stem is the object's name and matches the directory
+/// exactly; only the extension folds.
+fn edt_descriptors(tree: &dyn DirTree, dir: &Path) -> Vec<(String, PathBuf)> {
+    tree.entries(dir)
+        .into_iter()
+        .filter(|entry| entry.is_dir())
+        .filter_map(|entry| {
+            let name = entry.path.file_name()?.to_str()?.to_string();
+            let main = bsl_conventions::find_child_stem_exact_in(
+                tree,
+                &entry.path,
+                &name,
+                bsl_conventions::MDO_EXTENSION,
+            )?;
+            Some((name, main))
+        })
+        .collect()
+}
+
+/// The descriptors of a collection in whichever layout the root uses: loose
+/// `<name>.xml` files for a configurator dump, `<name>/<name>.mdo` for EDT.
+fn object_descriptors(
+    tree: &dyn DirTree,
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<(String, PathBuf)> {
+    match format {
+        SourceFormat::Designer => loose_xml_children(tree, dir),
+        SourceFormat::Edt => edt_descriptors(tree, dir),
+    }
+}
+
+/// A module body of an object: under `Ext/` in a configurator dump, directly
+/// in the object directory in an EDT project.
+fn probe_module_file(
+    tree: &dyn DirTree,
+    object_dir: &Path,
+    file: bsl_conventions::ConventionalName,
+    format: SourceFormat,
+) -> Option<PathBuf> {
+    match format {
+        SourceFormat::Designer => probe_ext_child(tree, object_dir, file),
+        SourceFormat::Edt => bsl_conventions::find_child_ci_in(tree, object_dir, file.canonical())
+            .filter(|p| tree.kind_of(p) == Some(bsl_conventions::EntryKind::File)),
+    }
+}
+
+/// A role's rights: `Ext/Rights.xml` beside a configurator dump's role,
+/// `Rights.rights` inside an EDT role directory. Same schema either way.
+fn probe_rights(tree: &dyn DirTree, role_dir: &Path, format: SourceFormat) -> Option<PathBuf> {
+    match format {
+        SourceFormat::Designer => {
+            probe_ext_child(tree, role_dir, bsl_conventions::ConventionalName::RightsXml)
+        }
+        SourceFormat::Edt => bsl_conventions::find_child_ci_in(
+            tree,
+            role_dir,
+            bsl_conventions::ConventionalName::RightsRights.canonical(),
+        ),
+    }
+    .filter(|p| tree.kind_of(p) == Some(bsl_conventions::EntryKind::File))
+}
+
+/// Read and parse every object of an EDT collection in parallel. `f` sees the
+/// object's name, its directory and its descriptor text.
+fn load_edt_objects<T, F>(dir: &Path, f: F) -> Vec<T>
+where
+    T: Send,
+    F: Fn(&str, &Path, &str) -> Option<T> + Sync,
+{
+    edt_descriptors(&bsl_conventions::RealFs, dir)
+        .into_par_iter()
+        .filter_map(|(name, main)| {
+            let xml = fs::read_to_string(&main).ok()?;
+            let object_dir = main.parent()?;
+            f(&name, object_dir, &xml)
+        })
+        .collect()
+}
+
+/// The module URI the configuration records for a body found on disk: the
+/// collection and object segments in their real spelling, the file as found.
+fn module_uri(
+    collection_dir: &Path,
+    fallback_collection: &str,
+    name: &str,
+    object_dir: &Path,
+    found: &Path,
+) -> String {
+    let suffix =
+        found.strip_prefix(object_dir).unwrap_or(found).to_string_lossy().replace('\\', "/");
+    let collection =
+        collection_dir.file_name().and_then(|n| n.to_str()).unwrap_or(fallback_collection);
+    format!("{collection}/{name}/{suffix}")
+}
+
+/// The same common module with its body recorded: the builder is the only way
+/// to set a module's URI, so every flag is carried across.
+fn common_module_with_uri(
+    module: &crate::common_module::CommonModule,
+    uri: Option<String>,
+) -> crate::common_module::CommonModule {
+    let mut builder = crate::common_module::CommonModule::builder()
+        .uuid(*module.uuid())
+        .name(module.name())
+        .uri(uri)
+        .server(module.is_server())
+        .global(module.is_global())
+        .client_managed_application(module.is_client_managed_application())
+        .client_ordinary_application(module.is_client_ordinary_application())
+        .external_connection(module.is_external_connection())
+        .server_call(module.is_server_call())
+        .privileged(module.is_privileged())
+        .return_values_reuse(module.return_values_reuse())
+        .object_belonging(module.object_belonging())
+        .protected(false);
+    if let Some(comment) = module.comment() {
+        builder = builder.comment(comment);
+    }
+    builder.build()
+}
+
 fn off_exclusive_pool<T: Send>(f: impl FnOnce() -> T + Send) -> T {
     if !stdx::par_guard::no_nested_parallelism() {
         return f();
@@ -126,7 +251,7 @@ struct LoadedMetadata {
     subsystems: Vec<crate::subsystem::Subsystem>,
 }
 
-fn load_all_metadata_parallel(path: &Path) -> LoadedMetadata {
+fn load_all_metadata_parallel(path: &Path, format: SourceFormat) -> LoadedMetadata {
     let start = std::time::Instant::now();
     let common_modules = Mutex::new(Vec::new());
     let catalogs = Mutex::new(Vec::new());
@@ -157,155 +282,161 @@ fn load_all_metadata_parallel(path: &Path) -> LoadedMetadata {
 
     rayon::scope(|s| {
         s.spawn(|_| {
-            *common_modules.lock().unwrap() = load_common_modules_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "CommonModules",
-            ))
+            *common_modules.lock().unwrap() = load_common_modules_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "CommonModules"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *catalogs.lock().unwrap() =
-                load_catalogs_parallel(&collection_dir(&bsl_conventions::RealFs, path, "Catalogs"))
+            *catalogs.lock().unwrap() = load_catalogs_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "Catalogs"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *documents.lock().unwrap() = load_documents_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "Documents",
-            ))
+            *documents.lock().unwrap() = load_documents_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "Documents"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *info_registers.lock().unwrap() = load_information_registers_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "InformationRegisters",
-            ))
+            *info_registers.lock().unwrap() = load_information_registers_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "InformationRegisters"),
+                format,
+            )
         });
         s.spawn(|_| {
             *accum_registers.lock().unwrap() = load_accumulation_registers_parallel(
                 &collection_dir(&bsl_conventions::RealFs, path, "AccumulationRegisters"),
+                format,
             )
         });
         s.spawn(|_| {
             *account_registers.lock().unwrap() = load_accounting_registers_parallel(
                 &collection_dir(&bsl_conventions::RealFs, path, "AccountingRegisters"),
+                format,
             )
         });
         s.spawn(|_| {
-            *calc_registers.lock().unwrap() = load_calculation_registers_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "CalculationRegisters",
-            ))
+            *calc_registers.lock().unwrap() = load_calculation_registers_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "CalculationRegisters"),
+                format,
+            )
         });
         s.spawn(|_| {
             *event_subscriptions.lock().unwrap() = load_event_subscriptions_parallel(
                 &collection_dir(&bsl_conventions::RealFs, path, "EventSubscriptions"),
+                format,
             )
         });
         s.spawn(|_| {
-            *scheduled_jobs.lock().unwrap() = load_scheduled_jobs_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "ScheduledJobs",
-            ))
+            *scheduled_jobs.lock().unwrap() = load_scheduled_jobs_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "ScheduledJobs"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *roles.lock().unwrap() =
-                load_roles_parallel(&collection_dir(&bsl_conventions::RealFs, path, "Roles"))
+            *roles.lock().unwrap() = load_roles_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "Roles"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *defined_types.lock().unwrap() = load_defined_types_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "DefinedTypes",
-            ))
+            *defined_types.lock().unwrap() = load_defined_types_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "DefinedTypes"),
+                format,
+            )
         });
         s.spawn(|_| {
             *charts_char_types.lock().unwrap() = load_charts_of_characteristic_types_parallel(
                 &collection_dir(&bsl_conventions::RealFs, path, "ChartsOfCharacteristicTypes"),
+                format,
             )
         });
         s.spawn(|_| {
-            *constants.lock().unwrap() = load_constants_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "Constants",
-            ))
+            *constants.lock().unwrap() = load_constants_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "Constants"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *exchange_plans.lock().unwrap() = load_exchange_plans_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "ExchangePlans",
-            ))
+            *exchange_plans.lock().unwrap() = load_exchange_plans_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "ExchangePlans"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *business_processes.lock().unwrap() = load_business_processes_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "BusinessProcesses",
-            ))
+            *business_processes.lock().unwrap() = load_business_processes_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "BusinessProcesses"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *enums.lock().unwrap() =
-                load_enums_parallel(&collection_dir(&bsl_conventions::RealFs, path, "Enums"))
+            *enums.lock().unwrap() = load_enums_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "Enums"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *tasks.lock().unwrap() =
-                load_tasks_parallel(&collection_dir(&bsl_conventions::RealFs, path, "Tasks"))
+            *tasks.lock().unwrap() = load_tasks_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "Tasks"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *charts_accounts.lock().unwrap() = load_charts_of_accounts_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "ChartsOfAccounts",
-            ))
+            *charts_accounts.lock().unwrap() = load_charts_of_accounts_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "ChartsOfAccounts"),
+                format,
+            )
         });
         s.spawn(|_| {
             *charts_calc_types.lock().unwrap() = load_charts_of_calculation_types_parallel(
                 &collection_dir(&bsl_conventions::RealFs, path, "ChartsOfCalculationTypes"),
+                format,
             )
         });
         s.spawn(|_| {
             *external_data_sources.lock().unwrap() = load_simple_metadata_objects_parallel(
                 &collection_dir(&bsl_conventions::RealFs, path, "ExternalDataSources"),
                 MdoType::ExternalDataSource,
+                format,
             )
         });
         s.spawn(|_| {
-            *http_services.lock().unwrap() = load_http_services_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "HTTPServices",
-            ))
+            *http_services.lock().unwrap() = load_http_services_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "HTTPServices"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *web_services.lock().unwrap() = load_web_services_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "WebServices",
-            ))
+            *web_services.lock().unwrap() = load_web_services_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "WebServices"),
+                format,
+            )
         });
         s.spawn(|_| {
             *integration_services.lock().unwrap() = load_integration_services_parallel(
                 &collection_dir(&bsl_conventions::RealFs, path, "IntegrationServices"),
+                format,
             )
         });
         s.spawn(|_| {
-            *data_processors.lock().unwrap() = load_data_processors_parallel(&collection_dir(
-                &bsl_conventions::RealFs,
-                path,
-                "DataProcessors",
-            ))
+            *data_processors.lock().unwrap() = load_data_processors_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "DataProcessors"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *reports.lock().unwrap() =
-                load_reports_parallel(&collection_dir(&bsl_conventions::RealFs, path, "Reports"))
+            *reports.lock().unwrap() = load_reports_parallel(
+                &collection_dir(&bsl_conventions::RealFs, path, "Reports"),
+                format,
+            )
         });
         s.spawn(|_| {
-            *subsystems.lock().unwrap() =
-                load_subsystems(&collection_dir(&bsl_conventions::RealFs, path, "Subsystems"))
+            *subsystems.lock().unwrap() = load_subsystems(
+                &collection_dir(&bsl_conventions::RealFs, path, "Subsystems"),
+                format,
+            )
         });
     });
 
@@ -441,14 +572,33 @@ fn build_configuration(loaded: LoadedMetadata) -> Configuration {
 /// `<Name>/Subsystems/` directories. Each file directly inside a `Subsystems` directory is
 /// one subsystem; the parent/child relationship is carried in each subsystem's
 /// `child_subsystems`, not inferred from the directory layout.
-fn load_subsystems(dir: &Path) -> Vec<crate::subsystem::Subsystem> {
+fn load_subsystems(dir: &Path, format: SourceFormat) -> Vec<crate::subsystem::Subsystem> {
     let mut out = Vec::new();
-    collect_subsystems(dir, &mut out);
+    collect_subsystems(dir, &mut out, format);
     out
 }
 
-fn collect_subsystems(dir: &Path, out: &mut Vec<crate::subsystem::Subsystem>) {
+fn collect_subsystems(
+    dir: &Path,
+    out: &mut Vec<crate::subsystem::Subsystem>,
+    format: SourceFormat,
+) {
     if !dir.exists() {
+        return;
+    }
+    if format.is_edt() {
+        for (name, main) in edt_descriptors(&bsl_conventions::RealFs, dir) {
+            if let Ok(xml) = fs::read_to_string(&main) {
+                if let Ok(subsystem) = xml_parser::parse_subsystem_xml(&xml) {
+                    out.push(subsystem);
+                }
+            }
+            collect_subsystems(
+                &collection_dir(&bsl_conventions::RealFs, &dir.join(&name), "Subsystems"),
+                out,
+                format,
+            );
+        }
         return;
     }
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -465,14 +615,34 @@ fn collect_subsystems(dir: &Path, out: &mut Vec<crate::subsystem::Subsystem>) {
             }
         } else if path.is_dir() {
             // Nested subsystems live under `<Name>/Subsystems/`.
-            collect_subsystems(&collection_dir(&bsl_conventions::RealFs, &path, "Subsystems"), out);
+            collect_subsystems(
+                &collection_dir(&bsl_conventions::RealFs, &path, "Subsystems"),
+                out,
+                format,
+            );
         }
     }
 }
 
-fn load_common_modules_parallel(dir: &Path) -> Vec<crate::common_module::CommonModule> {
+fn load_common_modules_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<crate::common_module::CommonModule> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |name, module_dir, xml| {
+            let module = xml_parser::parse_common_module_xml(xml).ok()?;
+            let uri = probe_module_file(
+                &bsl_conventions::RealFs,
+                module_dir,
+                bsl_conventions::ConventionalName::Module,
+                format,
+            )
+            .map(|found| module_uri(dir, "CommonModules", name, module_dir, &found));
+            Some(common_module_with_uri(&module, uri))
+        });
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -553,52 +723,66 @@ fn load_common_modules_parallel(dir: &Path) -> Vec<crate::common_module::CommonM
         .collect()
 }
 
-fn load_catalogs_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_catalog_xml)
+fn load_catalogs_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_catalog_xml)
 }
 
-fn load_documents_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_document_xml)
+fn load_documents_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_document_xml)
 }
 
-fn load_business_processes_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_business_process_xml)
+fn load_business_processes_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_business_process_xml)
 }
 
-fn load_tasks_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_task_xml)
+fn load_tasks_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_task_xml)
 }
 
-fn load_exchange_plans_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_exchange_plan_xml)
+fn load_exchange_plans_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_exchange_plan_xml)
 }
 
-fn load_charts_of_characteristic_types_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_chart_of_characteristic_types_xml)
+fn load_charts_of_characteristic_types_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_chart_of_characteristic_types_xml)
 }
 
-fn load_charts_of_accounts_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_chart_of_accounts_xml)
+fn load_charts_of_accounts_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_chart_of_accounts_xml)
 }
 
-fn load_charts_of_calculation_types_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_chart_of_calculation_types_xml)
+fn load_charts_of_calculation_types_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_chart_of_calculation_types_xml)
 }
 
-fn load_data_processors_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_data_processor_xml)
+fn load_data_processors_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_data_processor_xml)
 }
 
-fn load_reports_parallel(dir: &Path) -> Vec<MetadataObject> {
-    load_metadata_objects_parallel(dir, xml_parser::parse_report_xml)
+fn load_reports_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
+    load_metadata_objects_parallel(dir, format, xml_parser::parse_report_xml)
 }
 
-fn load_metadata_objects_parallel<F>(dir: &Path, parser: F) -> Vec<MetadataObject>
+fn load_metadata_objects_parallel<F>(
+    dir: &Path,
+    format: SourceFormat,
+    parser: F,
+) -> Vec<MetadataObject>
 where
     F: Fn(&str) -> Result<MetadataObject> + Sync,
 {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        // Predefined items live inside the descriptor; there is no sidecar.
+        return load_edt_objects(dir, |_, _, xml| build_metadata_object(xml, None, &parser));
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -756,18 +940,29 @@ const SIMPLE_XML_DIRS: &[(&str, MdoType)] =
 /// happens lazily in the per-MDO query. Kinds with their own shapes (registers,
 /// roles, subsystems, services, name-only objects) are out of scope here.
 pub fn discover_metadata_structure(root: &Path, tree: &dyn DirTree) -> Vec<DiscoveredMdo> {
+    let format = SourceFormat::detect(root, tree);
     let mut out = Vec::new();
-    for (subdir, mdo_type) in METADATA_OBJECT_DIRS {
-        discover_dir_with_predefined(
-            tree,
-            &collection_dir(tree, root, subdir),
-            *mdo_type,
-            &mut out,
-        );
-    }
-    for (subdir, mdo_type) in SIMPLE_XML_DIRS {
-        for (name, main) in loose_xml_children(tree, &collection_dir(tree, root, subdir)) {
-            out.push(DiscoveredMdo { mdo_type: *mdo_type, name, main, predefined: None });
+    if format.is_edt() {
+        // One layout for every kind: `<name>/<name>.mdo`, predefined items
+        // inside the descriptor.
+        for (subdir, mdo_type) in METADATA_OBJECT_DIRS.iter().chain(SIMPLE_XML_DIRS) {
+            for (name, main) in edt_descriptors(tree, &collection_dir(tree, root, subdir)) {
+                out.push(DiscoveredMdo { mdo_type: *mdo_type, name, main, predefined: None });
+            }
+        }
+    } else {
+        for (subdir, mdo_type) in METADATA_OBJECT_DIRS {
+            discover_dir_with_predefined(
+                tree,
+                &collection_dir(tree, root, subdir),
+                *mdo_type,
+                &mut out,
+            );
+        }
+        for (subdir, mdo_type) in SIMPLE_XML_DIRS {
+            for (name, main) in loose_xml_children(tree, &collection_dir(tree, root, subdir)) {
+                out.push(DiscoveredMdo { mdo_type: *mdo_type, name, main, predefined: None });
+            }
         }
     }
     // `read_dir` yields entries in an unspecified order, so sort to a stable key:
@@ -852,9 +1047,10 @@ const REGISTER_DIRS: &[(&str, MdoType)] = &[
 /// [`parse_register_from_text`], so they get their own discovery + parse query
 /// while sharing the per-config-root structure listing and `config_index`.
 pub fn discover_register_structure(root: &Path, tree: &dyn DirTree) -> Vec<DiscoveredMdo> {
+    let format = SourceFormat::detect(root, tree);
     let mut out = Vec::new();
     for (subdir, mdo_type) in REGISTER_DIRS {
-        for (name, main) in loose_xml_children(tree, &collection_dir(tree, root, subdir)) {
+        for (name, main) in object_descriptors(tree, &collection_dir(tree, root, subdir), format) {
             out.push(DiscoveredMdo { mdo_type: *mdo_type, name, main, predefined: None });
         }
     }
@@ -940,8 +1136,9 @@ pub fn discover_defined_type_structure(
     root: &Path,
     tree: &dyn DirTree,
 ) -> Vec<DiscoveredDefinedType> {
+    let format = SourceFormat::detect(root, tree);
     let dir = collection_dir(tree, root, "DefinedTypes");
-    let mut out: Vec<DiscoveredDefinedType> = loose_xml_children(tree, &dir)
+    let mut out: Vec<DiscoveredDefinedType> = object_descriptors(tree, &dir, format)
         .into_iter()
         .map(|(name, main)| DiscoveredDefinedType { name, main })
         .collect();
@@ -958,8 +1155,9 @@ pub fn discover_event_subscription_structure(
     root: &Path,
     tree: &dyn DirTree,
 ) -> Vec<DiscoveredEventSubscription> {
+    let format = SourceFormat::detect(root, tree);
     let dir = collection_dir(tree, root, "EventSubscriptions");
-    let mut out: Vec<DiscoveredEventSubscription> = loose_xml_children(tree, &dir)
+    let mut out: Vec<DiscoveredEventSubscription> = object_descriptors(tree, &dir, format)
         .into_iter()
         .map(|(name, main)| DiscoveredEventSubscription { name, main })
         .collect();
@@ -974,8 +1172,9 @@ pub fn discover_scheduled_job_structure(
     root: &Path,
     tree: &dyn DirTree,
 ) -> Vec<DiscoveredScheduledJob> {
+    let format = SourceFormat::detect(root, tree);
     let dir = collection_dir(tree, root, "ScheduledJobs");
-    let mut out: Vec<DiscoveredScheduledJob> = loose_xml_children(tree, &dir)
+    let mut out: Vec<DiscoveredScheduledJob> = object_descriptors(tree, &dir, format)
         .into_iter()
         .map(|(name, main)| DiscoveredScheduledJob { name, main })
         .collect();
@@ -984,17 +1183,40 @@ pub fn discover_scheduled_job_structure(
 }
 
 pub fn discover_subsystem_structure(root: &Path, tree: &dyn DirTree) -> Vec<DiscoveredSubsystem> {
+    let format = SourceFormat::detect(root, tree);
     let mut out = Vec::new();
-    collect_subsystem_structure(tree, &collection_dir(tree, root, "Subsystems"), &mut out);
+    collect_subsystem_structure(tree, &collection_dir(tree, root, "Subsystems"), &mut out, format);
     out.sort_by(|a, b| (a.name.fold_lower(), &a.main).cmp(&(b.name.fold_lower(), &b.main)));
     out
 }
 
-fn collect_subsystem_structure(tree: &dyn DirTree, dir: &Path, out: &mut Vec<DiscoveredSubsystem>) {
+fn collect_subsystem_structure(
+    tree: &dyn DirTree,
+    dir: &Path,
+    out: &mut Vec<DiscoveredSubsystem>,
+    format: SourceFormat,
+) {
     let mut stack = vec![dir.to_path_buf()];
     while let Some(dir) = stack.pop() {
         for entry in tree.entries(&dir) {
             let path = entry.path;
+            if format.is_edt() {
+                if entry.kind != bsl_conventions::EntryKind::Dir {
+                    continue;
+                }
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if let Some(main) = bsl_conventions::find_child_stem_exact_in(
+                        tree,
+                        &path,
+                        name,
+                        bsl_conventions::MDO_EXTENSION,
+                    ) {
+                        out.push(DiscoveredSubsystem { name: name.to_string(), main });
+                    }
+                }
+                stack.push(collection_dir(tree, &path, "Subsystems"));
+                continue;
+            }
             if entry.kind == bsl_conventions::EntryKind::File
                 && bsl_conventions::has_extension(&path, bsl_conventions::XML_EXTENSION)
             {
@@ -1061,12 +1283,17 @@ pub fn discover_common_module_structure(
     root: &Path,
     tree: &dyn DirTree,
 ) -> Vec<DiscoveredCommonModule> {
+    let format = SourceFormat::detect(root, tree);
     let dir = collection_dir(tree, root, "CommonModules");
-    let mut out: Vec<DiscoveredCommonModule> = loose_xml_children(tree, &dir)
+    let mut out: Vec<DiscoveredCommonModule> = object_descriptors(tree, &dir, format)
         .into_iter()
         .map(|(name, main)| {
-            let module_file =
-                probe_ext_child(tree, &dir.join(&name), bsl_conventions::ConventionalName::Module);
+            let module_file = probe_module_file(
+                tree,
+                &dir.join(&name),
+                bsl_conventions::ConventionalName::Module,
+                format,
+            );
             DiscoveredCommonModule { name, main, module_file }
         })
         .collect();
@@ -1080,12 +1307,17 @@ pub fn discover_http_service_structure(
     root: &Path,
     tree: &dyn DirTree,
 ) -> Vec<DiscoveredHTTPService> {
+    let format = SourceFormat::detect(root, tree);
     let dir = collection_dir(tree, root, "HTTPServices");
-    let mut out: Vec<DiscoveredHTTPService> = loose_xml_children(tree, &dir)
+    let mut out: Vec<DiscoveredHTTPService> = object_descriptors(tree, &dir, format)
         .into_iter()
         .map(|(name, main)| {
-            let module_file =
-                probe_ext_child(tree, &dir.join(&name), bsl_conventions::ConventionalName::Module);
+            let module_file = probe_module_file(
+                tree,
+                &dir.join(&name),
+                bsl_conventions::ConventionalName::Module,
+                format,
+            );
             DiscoveredHTTPService { name, main, module_file }
         })
         .collect();
@@ -1098,12 +1330,17 @@ pub fn discover_web_service_structure(
     root: &Path,
     tree: &dyn DirTree,
 ) -> Vec<DiscoveredWebService> {
+    let format = SourceFormat::detect(root, tree);
     let dir = collection_dir(tree, root, "WebServices");
-    let mut out: Vec<DiscoveredWebService> = loose_xml_children(tree, &dir)
+    let mut out: Vec<DiscoveredWebService> = object_descriptors(tree, &dir, format)
         .into_iter()
         .map(|(name, main)| {
-            let module_file =
-                probe_ext_child(tree, &dir.join(&name), bsl_conventions::ConventionalName::Module);
+            let module_file = probe_module_file(
+                tree,
+                &dir.join(&name),
+                bsl_conventions::ConventionalName::Module,
+                format,
+            );
             DiscoveredWebService { name, main, module_file }
         })
         .collect();
@@ -1116,12 +1353,17 @@ pub fn discover_integration_service_structure(
     root: &Path,
     tree: &dyn DirTree,
 ) -> Vec<DiscoveredIntegrationService> {
+    let format = SourceFormat::detect(root, tree);
     let dir = collection_dir(tree, root, "IntegrationServices");
-    let mut out: Vec<DiscoveredIntegrationService> = loose_xml_children(tree, &dir)
+    let mut out: Vec<DiscoveredIntegrationService> = object_descriptors(tree, &dir, format)
         .into_iter()
         .map(|(name, main)| {
-            let module_file =
-                probe_ext_child(tree, &dir.join(&name), bsl_conventions::ConventionalName::Module);
+            let module_file = probe_module_file(
+                tree,
+                &dir.join(&name),
+                bsl_conventions::ConventionalName::Module,
+                format,
+            );
             DiscoveredIntegrationService { name, main, module_file }
         })
         .collect();
@@ -1209,16 +1451,12 @@ pub fn parse_role_from_texts(
 /// [`discover_scheduled_job_structure`]. Roles are stored as loose `Roles/<name>.xml`
 /// files, with optional rights under `Roles/<name>/Ext/Rights.xml`.
 pub fn discover_role_structure(root: &Path, tree: &dyn DirTree) -> Vec<DiscoveredRole> {
+    let format = SourceFormat::detect(root, tree);
     let dir = collection_dir(tree, root, "Roles");
-    let mut out: Vec<DiscoveredRole> = loose_xml_children(tree, &dir)
+    let mut out: Vec<DiscoveredRole> = object_descriptors(tree, &dir, format)
         .into_iter()
         .map(|(name, main)| {
-            let rights = probe_ext_child(
-                tree,
-                &dir.join(&name),
-                bsl_conventions::ConventionalName::RightsXml,
-            )
-            .filter(|p| tree.kind_of(p) == Some(bsl_conventions::EntryKind::File));
+            let rights = probe_rights(tree, &dir.join(&name), format);
             DiscoveredRole { name, main, rights }
         })
         .collect();
@@ -1227,9 +1465,12 @@ pub fn discover_role_structure(root: &Path, tree: &dyn DirTree) -> Vec<Discovere
     out
 }
 
-fn load_enums_parallel(dir: &Path) -> Vec<MetadataObject> {
+fn load_enums_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |_, _, xml| xml_parser::parse_enum_xml(xml).ok());
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1253,9 +1494,12 @@ fn load_enums_parallel(dir: &Path) -> Vec<MetadataObject> {
         .collect()
 }
 
-fn load_constants_parallel(dir: &Path) -> Vec<MetadataObject> {
+fn load_constants_parallel(dir: &Path, format: SourceFormat) -> Vec<MetadataObject> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |_, _, xml| xml_parser::parse_constant_xml(xml).ok());
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1279,12 +1523,19 @@ fn load_constants_parallel(dir: &Path) -> Vec<MetadataObject> {
         .collect()
 }
 
-fn load_registers_parallel<F>(dir: &Path, parser: F) -> Vec<crate::register::Register>
+fn load_registers_parallel<F>(
+    dir: &Path,
+    format: SourceFormat,
+    parser: F,
+) -> Vec<crate::register::Register>
 where
     F: Fn(&str) -> Result<crate::register::Register> + Sync,
 {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |_, _, xml| parser(xml).ok());
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1308,27 +1559,45 @@ where
         .collect()
 }
 
-fn load_information_registers_parallel(dir: &Path) -> Vec<crate::register::Register> {
-    load_registers_parallel(dir, xml_parser::parse_information_register_xml)
+fn load_information_registers_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<crate::register::Register> {
+    load_registers_parallel(dir, format, xml_parser::parse_information_register_xml)
 }
 
-fn load_accumulation_registers_parallel(dir: &Path) -> Vec<crate::register::Register> {
-    load_registers_parallel(dir, xml_parser::parse_accumulation_register_xml)
+fn load_accumulation_registers_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<crate::register::Register> {
+    load_registers_parallel(dir, format, xml_parser::parse_accumulation_register_xml)
 }
 
-fn load_accounting_registers_parallel(dir: &Path) -> Vec<crate::register::Register> {
-    load_registers_parallel(dir, xml_parser::parse_accounting_register_xml)
+fn load_accounting_registers_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<crate::register::Register> {
+    load_registers_parallel(dir, format, xml_parser::parse_accounting_register_xml)
 }
 
-fn load_calculation_registers_parallel(dir: &Path) -> Vec<crate::register::Register> {
-    load_registers_parallel(dir, xml_parser::parse_calculation_register_xml)
+fn load_calculation_registers_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<crate::register::Register> {
+    load_registers_parallel(dir, format, xml_parser::parse_calculation_register_xml)
 }
 
 fn load_event_subscriptions_parallel(
     dir: &Path,
+    format: SourceFormat,
 ) -> Vec<crate::event_subscription::EventSubscription> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |_, _, xml| {
+            xml_parser::parse_event_subscription_xml(xml).ok()
+        });
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1352,9 +1621,15 @@ fn load_event_subscriptions_parallel(
         .collect()
 }
 
-fn load_scheduled_jobs_parallel(dir: &Path) -> Vec<crate::scheduled_job::ScheduledJob> {
+fn load_scheduled_jobs_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<crate::scheduled_job::ScheduledJob> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |_, _, xml| xml_parser::parse_scheduled_job_xml(xml).ok());
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1378,9 +1653,23 @@ fn load_scheduled_jobs_parallel(dir: &Path) -> Vec<crate::scheduled_job::Schedul
         .collect()
 }
 
-fn load_roles_parallel(dir: &Path) -> Vec<crate::role::Role> {
+fn load_roles_parallel(dir: &Path, format: SourceFormat) -> Vec<crate::role::Role> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |_, role_dir, xml| {
+            let role = xml_parser::parse_role_xml(xml).ok()?;
+            let rights = probe_rights(&bsl_conventions::RealFs, role_dir, format)
+                .and_then(|path| fs::read_to_string(path).ok())
+                .and_then(|rights_xml| xml_parser::parse_rights_xml(&rights_xml).ok());
+            Some(match rights {
+                Some(rights_data) => {
+                    crate::role::Role::with_data(*role.uuid(), role.name().to_string(), rights_data)
+                }
+                None => role,
+            })
+        });
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1424,9 +1713,15 @@ fn load_roles_parallel(dir: &Path) -> Vec<crate::role::Role> {
         .collect()
 }
 
-fn load_defined_types_parallel(dir: &Path) -> Vec<crate::defined_type::DefinedType> {
+fn load_defined_types_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<crate::defined_type::DefinedType> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |_, _, xml| xml_parser::parse_defined_type_xml(xml).ok());
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1450,9 +1745,26 @@ fn load_defined_types_parallel(dir: &Path) -> Vec<crate::defined_type::DefinedTy
         .collect()
 }
 
-fn load_http_services_parallel(dir: &Path) -> Vec<crate::http_service::HTTPService> {
+fn load_http_services_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<crate::http_service::HTTPService> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |name, service_dir, xml| {
+            let mut service = xml_parser::parse_http_service_xml(xml, name).ok()?;
+            if let Some(found) = probe_module_file(
+                &bsl_conventions::RealFs,
+                service_dir,
+                bsl_conventions::ConventionalName::Module,
+                format,
+            ) {
+                service.set_uri(module_uri(dir, "HTTPServices", name, service_dir, &found));
+            }
+            Some(service)
+        });
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1491,9 +1803,26 @@ fn load_http_services_parallel(dir: &Path) -> Vec<crate::http_service::HTTPServi
         .collect()
 }
 
-fn load_web_services_parallel(dir: &Path) -> Vec<crate::web_service::WebService> {
+fn load_web_services_parallel(
+    dir: &Path,
+    format: SourceFormat,
+) -> Vec<crate::web_service::WebService> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |name, service_dir, xml| {
+            let mut service = xml_parser::parse_web_service_xml(xml, name).ok()?;
+            if let Some(found) = probe_module_file(
+                &bsl_conventions::RealFs,
+                service_dir,
+                bsl_conventions::ConventionalName::Module,
+                format,
+            ) {
+                service.set_uri(module_uri(dir, "WebServices", name, service_dir, &found));
+            }
+            Some(service)
+        });
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1534,9 +1863,15 @@ fn load_web_services_parallel(dir: &Path) -> Vec<crate::web_service::WebService>
 
 fn load_integration_services_parallel(
     dir: &Path,
+    format: SourceFormat,
 ) -> Vec<crate::integration_service::IntegrationService> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |name, _, xml| {
+            xml_parser::parse_integration_service_xml(xml, name).ok()
+        });
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -1561,9 +1896,16 @@ fn load_integration_services_parallel(
         .collect()
 }
 
-fn load_simple_metadata_objects_parallel(dir: &Path, mdo_type: MdoType) -> Vec<MetadataObject> {
+fn load_simple_metadata_objects_parallel(
+    dir: &Path,
+    mdo_type: MdoType,
+    format: SourceFormat,
+) -> Vec<MetadataObject> {
     if !dir.exists() {
         return Vec::new();
+    }
+    if format.is_edt() {
+        return load_edt_objects(dir, |name, _, _| Some(MetadataObject::new(mdo_type, name)));
     }
 
     let entries: Vec<_> = match fs::read_dir(dir) {
@@ -3109,7 +3451,7 @@ mod tree_source_tests {
         fs::write(path, text).unwrap();
     }
 
-    fn every_file_under(dir: &Path, out: &mut Vec<PathBuf>) {
+    pub(super) fn every_file_under(dir: &Path, out: &mut Vec<PathBuf>) {
         let Ok(entries) = fs::read_dir(dir) else { return };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -3230,5 +3572,186 @@ mod tree_source_tests {
 
         let set = scanned_universe(&root);
         assert_eq!(discover_common_module_structure(&root, &set), found);
+    }
+}
+
+#[cfg(test)]
+mod edt_tests {
+    use super::*;
+    use crate::enums::ObjectBelonging;
+    use crate::traits::Module;
+    use bsl_conventions::{PathSetTree, RealFs};
+
+    fn edt_fixture() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/edt")
+    }
+
+    fn edt_extension_fixture() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/edt_extension")
+    }
+
+    #[test]
+    fn the_edt_fixture_is_detected_and_loads_every_kind() {
+        let root = edt_fixture();
+        assert_eq!(SourceFormat::of_directory(&root), SourceFormat::Edt);
+        let config = load_from_directory(&root).unwrap();
+
+        let module_names: Vec<&str> = config.common_modules().iter().map(|m| m.name()).collect();
+        assert_eq!(config.common_modules().len(), 3, "{module_names:?}");
+        let first = config.find_common_module("ПервыйОбщийМодуль").unwrap();
+        assert!(first.is_server());
+        assert_eq!(first.uri(), Some("CommonModules/ПервыйОбщийМодуль/Module.bsl"));
+        assert!(!first.is_protected());
+        assert_eq!(first.comment(), Some("Серверный общий модуль"));
+
+        let catalog = config.find_metadata_object(MdoType::Catalog, "Справочник1").unwrap();
+        assert!(catalog.attributes.iter().any(|a| a.name == "Реквизит1"));
+        assert!(catalog.attributes.iter().any(|a| a.name == "Владелец"));
+        assert_eq!(catalog.tabular_sections.len(), 1);
+        assert_eq!(catalog.predefined_items.len(), 2);
+        assert!(config.find_metadata_object(MdoType::Catalog, "СправочникСМенеджером").is_some());
+        let document = config.find_metadata_object(MdoType::Document, "Документ1").unwrap();
+        assert_eq!(document.register_records().len(), 2);
+        assert!(config.find_metadata_object(MdoType::Enum, "Перечисление1").is_some());
+        assert!(config.find_metadata_object(MdoType::Constant, "Константа1").is_some());
+        assert!(config
+            .find_metadata_object(MdoType::ChartOfCharacteristicTypes, "ПланВидовХарактеристик1")
+            .is_some());
+        assert_eq!(config.metadata_objects().len(), 6);
+
+        assert_eq!(config.registers().len(), 2);
+        let register = config
+            .find_register_by_type_and_name(MdoType::InformationRegister, "РегистрСведений1")
+            .unwrap();
+        assert_eq!(register.dimensions().len(), 1);
+        assert_eq!(config.defined_types().len(), 1);
+        assert_eq!(config.event_subscriptions().len(), 1);
+        assert_eq!(config.scheduled_jobs().len(), 1);
+        let role = config.find_role("Роль1").unwrap();
+        assert_eq!(role.data().objects().len(), 1);
+        let names: Vec<&str> = config.subsystems().iter().map(|s| s.name()).collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert_eq!(
+            config.find_http_service("HTTPСервис1").unwrap().uri(),
+            Some("HTTPServices/HTTPСервис1/Module.bsl")
+        );
+        assert_eq!(
+            config.find_web_service("WebСервис1").unwrap().uri(),
+            Some("WebServices/WebСервис1/Module.bsl")
+        );
+        assert!(config
+            .metadata_objects()
+            .iter()
+            .all(|m| m.object_belonging == ObjectBelonging::Own));
+    }
+
+    #[test]
+    fn edt_discovery_matches_the_directory_load_and_both_tree_sources() {
+        let root = edt_fixture();
+        let config = load_from_directory(&root).unwrap();
+        let by_real = discover_metadata_structure(&root, &RealFs);
+        let mut files = Vec::new();
+        super::tree_source_tests::every_file_under(&root, &mut files);
+        let scanned = PathSetTree::from_files(files);
+        let by_scan = discover_metadata_structure(&root, &scanned);
+        assert_eq!(by_real, by_scan);
+        assert!(by_real.iter().all(|d| d.predefined.is_none()));
+        assert_eq!(by_real.len(), config.metadata_objects().len());
+
+        let modules = discover_common_module_structure(&root, &RealFs);
+        assert_eq!(modules.len(), 3);
+        assert!(modules
+            .iter()
+            .all(|m| m.module_file.as_ref().is_some_and(|p| p.ends_with("Module.bsl"))));
+        assert_eq!(modules, discover_common_module_structure(&root, &scanned));
+
+        let roles = discover_role_structure(&root, &RealFs);
+        assert!(roles[0].rights.as_ref().unwrap().ends_with("Rights.rights"));
+        assert_eq!(roles, discover_role_structure(&root, &scanned));
+        assert_eq!(discover_register_structure(&root, &RealFs).len(), 2);
+        assert_eq!(
+            discover_register_structure(&root, &RealFs),
+            discover_register_structure(&root, &scanned)
+        );
+        assert_eq!(discover_defined_type_structure(&root, &RealFs).len(), 1);
+        assert_eq!(discover_event_subscription_structure(&root, &RealFs).len(), 1);
+        assert_eq!(discover_scheduled_job_structure(&root, &RealFs).len(), 1);
+        let subsystems = discover_subsystem_structure(&root, &RealFs);
+        assert_eq!(subsystems.len(), 2);
+        assert_eq!(subsystems, discover_subsystem_structure(&root, &scanned));
+        let http = discover_http_service_structure(&root, &RealFs);
+        assert_eq!(http[0].module_file.as_ref().unwrap().file_name().unwrap(), "Module.bsl");
+        assert_eq!(discover_web_service_structure(&root, &RealFs).len(), 1);
+    }
+
+    #[test]
+    fn a_per_object_parse_from_texts_needs_no_format_hint() {
+        let root = edt_fixture();
+        for d in discover_metadata_structure(&root, &RealFs) {
+            let text = std::fs::read_to_string(&d.main).unwrap();
+            let parsed = parse_metadata_object_from_texts(d.mdo_type, &text, None).unwrap();
+            assert_eq!(parsed.name, d.name, "{}", d.main.display());
+        }
+        for d in discover_register_structure(&root, &RealFs) {
+            let text = std::fs::read_to_string(&d.main).unwrap();
+            assert_eq!(parse_register_from_text(d.mdo_type, &text).unwrap().name(), d.name);
+        }
+        for d in discover_role_structure(&root, &RealFs) {
+            let main = std::fs::read_to_string(&d.main).unwrap();
+            let rights = d.rights.as_ref().map(|p| std::fs::read_to_string(p).unwrap());
+            let role = parse_role_from_texts(&main, rights.as_deref()).unwrap();
+            assert_eq!(role.data().objects().len(), 1);
+        }
+    }
+
+    #[test]
+    fn the_designer_fixture_is_unchanged() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/designer");
+        assert_eq!(SourceFormat::of_directory(&root), SourceFormat::Designer);
+        let config = load_from_directory(&root).unwrap();
+        assert!(config
+            .find_common_module("ПервыйОбщийМодуль")
+            .unwrap()
+            .uri()
+            .unwrap()
+            .ends_with("Ext/Module.bsl"));
+        assert!(config.find_metadata_object(MdoType::Catalog, "Справочник1").is_some());
+    }
+
+    #[test]
+    fn an_edt_extension_tells_adopted_objects_from_its_own() {
+        let ext = load_from_directory(edt_extension_fixture()).unwrap();
+        let adopted = ext.find_metadata_object(MdoType::Catalog, "Справочник1").unwrap();
+        assert_eq!(adopted.object_belonging, ObjectBelonging::Adopted);
+        assert_eq!(adopted.attributes.iter().filter(|a| a.name == "рдт_Реквизит").count(), 1);
+        let own = ext.find_metadata_object(MdoType::Catalog, "рдт_Справочник").unwrap();
+        assert_eq!(own.object_belonging, ObjectBelonging::Own);
+        assert_eq!(
+            ext.find_common_module("ПервыйОбщийМодуль").unwrap().object_belonging(),
+            ObjectBelonging::Adopted
+        );
+        assert_eq!(
+            ext.find_common_module("рдт_Модуль").unwrap().object_belonging(),
+            ObjectBelonging::Own
+        );
+    }
+
+    #[test]
+    fn merging_an_edt_extension_onto_the_edt_base_adds_the_borrowed_attribute() {
+        let base = load_from_directory(edt_fixture()).unwrap();
+        let ext = load_from_directory(edt_extension_fixture()).unwrap();
+        let merged = base.merged_with_extension(&ext);
+        let catalog = merged.find_metadata_object(MdoType::Catalog, "Справочник1").unwrap();
+        assert!(catalog.attributes.iter().any(|a| a.name == "Реквизит1"), "base attribute kept");
+        assert!(
+            catalog.attributes.iter().any(|a| a.name == "рдт_Реквизит"),
+            "extension attribute added"
+        );
+        assert_eq!(
+            catalog.object_belonging,
+            ObjectBelonging::Own,
+            "the merged object is the base's"
+        );
+        assert!(merged.find_metadata_object(MdoType::Catalog, "рдт_Справочник").is_some());
     }
 }

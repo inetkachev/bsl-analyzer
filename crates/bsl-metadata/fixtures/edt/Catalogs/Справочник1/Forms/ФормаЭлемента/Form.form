@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<form:Form xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:core="http://g5.1c.ru/v8/dt/mcore" xmlns:form="http://g5.1c.ru/v8/dt/form">
+  <items xsi:type="form:FormGroup">
+    <name>ГруппаШапка</name>
+    <id>2</id>
+    <visible>true</visible>
+    <enabled>true</enabled>
+    <userVisible>
+      <common>true</common>
+    </userVisible>
+    <items xsi:type="form:FormField">
+      <name>Наименование</name>
+      <id>3</id>
+      <visible>true</visible>
+      <enabled>true</enabled>
+      <userVisible>
+        <common>true</common>
+      </userVisible>
+      <dataPath xsi:type="form:DataPath">
+        <segments>Объект.Наименование</segments>
+      </dataPath>
+      <handlers>
+        <event>OnChange</event>
+        <name>НаименованиеПриИзменении</name>
+      </handlers>
+      <extendedTooltip>
+        <name>НаименованиеExtendedTooltip</name>
+        <id>103</id>
+      </extendedTooltip>
+      <contextMenu>
+        <name>НаименованиеContextMenu</name>
+        <id>203</id>
+      </contextMenu>
+      <type>InputField</type>
+      <editMode>Enter</editMode>
+      <showInHeader>true</showInHeader>
+      <extInfo xsi:type="form:InputFieldExtInfo"/>
+    </items>
+    <items xsi:type="form:FormField">
+      <name>Реквизит1</name>
+      <id>4</id>
+      <visible>true</visible>
+      <enabled>true</enabled>
+      <userVisible>
+        <common>true</common>
+      </userVisible>
+      <dataPath xsi:type="form:DataPath">
+        <segments>Объект.Реквизит1</segments>
+      </dataPath>
+      <extendedTooltip>
+        <name>Реквизит1ExtendedTooltip</name>
+        <id>104</id>
+      </extendedTooltip>
+      <contextMenu>
+        <name>Реквизит1ContextMenu</name>
+        <id>204</id>
+      </contextMenu>
+      <type>InputField</type>
+      <editMode>Enter</editMode>
+      <showInHeader>true</showInHeader>
+      <extInfo xsi:type="form:InputFieldExtInfo"/>
+    </items>
+    <type>UsualGroup</type>
+    <extInfo xsi:type="form:UsualGroupExtInfo">
+      <group>Vertical</group>
+    </extInfo>
+  </items>
+  <items xsi:type="form:Table">
+    <name>Строки</name>
+    <id>5</id>
+    <visible>true</visible>
+    <enabled>true</enabled>
+    <userVisible>
+      <common>true</common>
+    </userVisible>
+    <dataPath xsi:type="form:DataPath">
+      <segments>Объект.Строки</segments>
+    </dataPath>
+    <items xsi:type="form:FormField">
+      <name>СтрокиТовар</name>
+      <id>6</id>
+      <visible>true</visible>
+      <enabled>true</enabled>
+      <userVisible>
+        <common>true</common>
+      </userVisible>
+      <dataPath xsi:type="form:DataPath">
+        <segments>Объект.Строки.Товар</segments>
+      </dataPath>
+      <extendedTooltip>
+        <name>СтрокиТоварExtendedTooltip</name>
+        <id>106</id>
+      </extendedTooltip>
+      <contextMenu>
+        <name>СтрокиТоварContextMenu</name>
+        <id>206</id>
+      </contextMenu>
+      <type>InputField</type>
+      <editMode>Enter</editMode>
+      <showInHeader>true</showInHeader>
+      <extInfo xsi:type="form:InputFieldExtInfo"/>
+    </items>
+    <items xsi:type="form:FormField">
+      <name>СтрокиКоличество</name>
+      <id>7</id>
+      <visible>true</visible>
+      <enabled>true</enabled>
+      <userVisible>
+        <common>true</common>
+      </userVisible>
+      <dataPath xsi:type="form:DataPath">
+        <segments>Объект.Строки.Количество</segments>
+      </dataPath>
+      <extendedTooltip>
+        <name>СтрокиКоличествоExtendedTooltip</name>
+        <id>107</id>
+      </extendedTooltip>
+      <contextMenu>
+        <name>СтрокиКоличествоContextMenu</name>
+        <id>207</id>
+      </contextMenu>
+      <type>InputField</type>
+      <editMode>Enter</editMode>
+      <showInHeader>true</showInHeader>
+      <extInfo xsi:type="form:InputFieldExtInfo"/>
+    </items>
+    <autoCommandBar>
+      <name>СтрокиКоманднаяПанель</name>
+      <id>305</id>
+    </autoCommandBar>
+    <extInfo xsi:type="form:TableExtInfo"/>
+  </items>
+  <items xsi:type="form:Button">
+    <name>Заполнить</name>
+    <id>8</id>
+    <visible>true</visible>
+    <enabled>true</enabled>
+    <userVisible>
+      <common>true</common>
+    </userVisible>
+    <type>CommandBarButton</type>
+    <commandName>Form.Command.Заполнить</commandName>
+    <extInfo xsi:type="form:ButtonExtInfo"/>
+  </items>
+  <items xsi:type="form:Decoration">
+    <name>Надпись</name>
+    <id>9</id>
+    <visible>true</visible>
+    <enabled>true</enabled>
+    <userVisible>
+      <common>true</common>
+    </userVisible>
+    <type>Label</type>
+    <extInfo xsi:type="form:LabelDecorationExtInfo"/>
+  </items>
+  <formCommands>
+    <name>Заполнить</name>
+    <id>1</id>
+    <use>
+      <common>true</common>
+    </use>
+    <action xsi:type="form:FormCommandHandlerContainer">
+      <handler>
+        <name>ЗаполнитьНаСервере</name>
+      </handler>
+    </action>
+    <currentRowUse>DontUse</currentRowUse>
+  </formCommands>
+  <attributes>
+    <name>Объект</name>
+    <id>1</id>
+    <valueType>
+      <types>CatalogObject.Справочник1</types>
+    </valueType>
+    <main>true</main>
+    <view>
+      <common>true</common>
+    </view>
+    <edit>
+      <common>true</common>
+    </edit>
+  </attributes>
+  <attributes>
+    <name>Таблица</name>
+    <id>2</id>
+    <valueType>
+      <types>ValueTable</types>
+    </valueType>
+    <columns>
+      <name>Колонка1</name>
+      <id>3</id>
+      <valueType>
+        <types>String</types>
+      </valueType>
+    </columns>
+    <view>
+      <common>true</common>
+    </view>
+    <edit>
+      <common>true</common>
+    </edit>
+  </attributes>
+  <handlers>
+    <event>OnOpen</event>
+    <name>ПриОткрытии</name>
+  </handlers>
+  <handlers>
+    <event>OnCreateAtServer</event>
+    <name>ПриСозданииНаСервере</name>
+  </handlers>
+  <commandBarLocation>Auto</commandBarLocation>
+  <autoCommandBar>
+    <name>ФормаКоманднаяПанель</name>
+    <id>-1</id>
+  </autoCommandBar>
+</form:Form>
