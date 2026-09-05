@@ -299,7 +299,12 @@ impl fmt::Display for TopologyError {
                 write!(f, "extension '{name}': path not found: {}", path.display())
             }
             TopologyError::StructuredNotAnExtension { name, path } => {
-                write!(f, "extension '{name}': no Configuration.xml under {}", path.display())
+                write!(
+                    f,
+                    "extension '{name}': no Configuration.xml or Configuration/Configuration.mdo \
+                     under {}",
+                    path.display()
+                )
             }
             TopologyError::ExternalInDependency { from, name } => write!(
                 f,
@@ -311,8 +316,9 @@ impl fmt::Display for TopologyError {
             }
             TopologyError::ExternalIsAConfiguration { name, path } => write!(
                 f,
-                "external '{name}': {} carries Configuration.xml, so it is a configuration \
-                 or an extension; declare it under [source].root or [source].extensions",
+                "external '{name}': {} carries a configuration descriptor, so it is a \
+                 configuration or an extension; declare it under [source].root or \
+                 [source].extensions",
                 path.display()
             ),
             TopologyError::ExternalNoObjectXml { name, path } => write!(

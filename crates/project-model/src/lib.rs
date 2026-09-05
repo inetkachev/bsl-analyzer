@@ -797,12 +797,15 @@ impl Project {
             }
             if config.configuration_dependency.is_some() {
                 return Err(config.config_error(format!(
-                    "shared configuration {} does not contain {}",
-                    path.display(),
-                    bsl_conventions::ConventionalName::ConfigurationXml.canonical()
+                    "shared configuration {} does not contain Configuration.xml or \
+                     Configuration/Configuration.mdo",
+                    path.display()
                 )));
             }
-            tracing::warn!(?path, "configuration root specified but Configuration.xml not found");
+            tracing::warn!(
+                ?path,
+                "configuration root specified but no configuration descriptor found"
+            );
         }
 
         match search_configuration(root, 2) {
@@ -1171,7 +1174,7 @@ impl Project {
         if configuration_xml_in(&path).is_none() {
             tracing::warn!(
                 path = %path.display(),
-                "extension has no Configuration.xml, skipping"
+                "extension has neither Configuration.xml nor Configuration/Configuration.mdo, skipping"
             );
             return None;
         }
@@ -1635,7 +1638,9 @@ const CONFIGURATION_KIND_SCAN_CAP: u64 = 8 * 1024 * 1024;
 /// The element the platform writes only for an extension. Deliberately not
 /// `ConfigurationExtensionCompatibilityMode`, which a *main* configuration also
 /// carries — that one states which extensions it accepts, not that it is one.
-const EXTENSION_MARKER: &[u8] = b"<ConfigurationExtensionPurpose";
+const EXTENSION_MARKER_DESIGNER: &[u8] = b"<ConfigurationExtensionPurpose";
+/// The same element in an EDT descriptor, where properties are camelCase.
+const EXTENSION_MARKER_EDT: &[u8] = b"<configurationExtensionPurpose";
 
 /// Classifies a configuration root by its `Configuration.xml`.
 ///
@@ -1643,13 +1648,34 @@ const EXTENSION_MARKER: &[u8] = b"<ConfigurationExtensionPurpose";
 /// analyzed without its main configuration — the state in which valid calls
 /// into the main configuration's exported common modules are reported as
 /// unresolved.
-/// The root's `Configuration.xml`, in whatever ASCII case the tree spells it.
-fn configuration_xml_in(dir: &Path) -> Option<PathBuf> {
-    bsl_conventions::find_child_ci(
+/// The file that makes a directory a configuration root, and the layout it
+/// announces.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigurationMarker {
+    pub path: PathBuf,
+    pub format: bsl_conventions::SourceFormat,
+}
+
+/// The file that makes `dir` a configuration root: `Configuration.xml` of a
+/// configurator dump, or `Configuration/Configuration.mdo` of an EDT project.
+/// A real file in either case — a directory (or a fifo) spelled like the
+/// marker satisfies mere existence, and opening a fifo would block.
+pub fn configuration_marker_in(dir: &Path) -> Option<ConfigurationMarker> {
+    if let Some(path) = bsl_conventions::find_child_ci(
         dir,
         bsl_conventions::ConventionalName::ConfigurationXml.canonical(),
     )
     .filter(|p| p.is_file())
+    {
+        return Some(ConfigurationMarker { path, format: bsl_conventions::SourceFormat::Designer });
+    }
+    bsl_conventions::edt_configuration_mdo_in(dir, &bsl_conventions::RealFs)
+        .map(|path| ConfigurationMarker { path, format: bsl_conventions::SourceFormat::Edt })
+}
+
+/// The root's marker file, whichever layout it announces.
+fn configuration_xml_in(dir: &Path) -> Option<PathBuf> {
+    configuration_marker_in(dir).map(|marker| marker.path)
 }
 
 /// Why a directory is not one external object export.
@@ -1774,11 +1800,17 @@ pub fn configuration_kind(root: &Path) -> ConfigurationKind {
     // `is_file` before opening, not just to reject a directory: opening a FIFO
     // with no writer blocks forever, and this runs on every project build —
     // including LSP startup, which would never finish.
-    let Some(path) = configuration_xml_in(root) else {
+    let Some(marker) = configuration_marker_in(root) else {
         return ConfigurationKind::Unknown;
     };
-    let Ok(file) = std::fs::File::open(&path) else {
+    let Ok(file) = std::fs::File::open(&marker.path) else {
         return ConfigurationKind::Unknown;
+    };
+    // The EDT descriptor has no `Properties` block; the marker can appear
+    // anywhere before the root closes, so that is where the scan gives up.
+    let (extension_marker, close): (&[u8], &[u8]) = match marker.format {
+        bsl_conventions::SourceFormat::Designer => (EXTENSION_MARKER_DESIGNER, b"</Properties>"),
+        bsl_conventions::SourceFormat::Edt => (EXTENSION_MARKER_EDT, b"</mdclass:Configuration>"),
     };
 
     let mut reader = file.take(CONFIGURATION_KIND_SCAN_CAP);
@@ -1793,8 +1825,8 @@ pub fn configuration_kind(root: &Path) -> ConfigurationKind {
         }
         // Re-scan from a little before the previous end so a marker straddling
         // two reads is still seen.
-        let from = scanned.saturating_sub(EXTENSION_MARKER.len());
-        match scan_for_extension_marker(&buf[from..]) {
+        let from = scanned.saturating_sub(extension_marker.len().max(close.len()));
+        match scan_for_extension_marker(&buf[from..], extension_marker, close) {
             MarkerScan::Found => return ConfigurationKind::Extension,
             MarkerScan::PropertiesClosed => return ConfigurationKind::Configuration,
             MarkerScan::NeedMore => scanned = buf.len(),
@@ -1805,7 +1837,7 @@ pub fn configuration_kind(root: &Path) -> ConfigurationKind {
 
 enum MarkerScan {
     Found,
-    /// `</Properties>` passed without a marker: it cannot appear later.
+    /// The closing tag after which the marker cannot appear has passed.
     PropertiesClosed,
     NeedMore,
 }
@@ -1815,10 +1847,9 @@ enum MarkerScan {
 /// A raw substring search would classify a main configuration as an extension
 /// when the marker merely appears inside `<!-- ... -->`, which is text and
 /// declares nothing.
-fn scan_for_extension_marker(head: &[u8]) -> MarkerScan {
+fn scan_for_extension_marker(head: &[u8], marker: &[u8], close: &[u8]) -> MarkerScan {
     const COMMENT_OPEN: &[u8] = b"<!--";
     const COMMENT_CLOSE: &[u8] = b"-->";
-    const PROPERTIES_CLOSE: &[u8] = b"</Properties>";
 
     let mut i = 0;
     while i < head.len() {
@@ -1832,10 +1863,10 @@ fn scan_for_extension_marker(head: &[u8]) -> MarkerScan {
             }
             continue;
         }
-        if rest.starts_with(EXTENSION_MARKER) {
+        if rest.starts_with(marker) {
             return MarkerScan::Found;
         }
-        if rest.starts_with(PROPERTIES_CLOSE) {
+        if rest.starts_with(close) {
             return MarkerScan::PropertiesClosed;
         }
         i += 1;
@@ -4239,6 +4270,71 @@ extensions = [{ name = "T" }]
     /// reads as the analyzer being wrong. It must therefore fire for every shape a
     /// base-less extension project takes, not only the one where the extension
     /// happens to sit at the workspace root.
+    fn edt_root(dir: &std::path::Path, extension: bool) {
+        std::fs::create_dir_all(dir.join("Configuration")).unwrap();
+        let purpose = if extension {
+            "<objectBelonging>Adopted</objectBelonging>\
+             <configurationExtensionPurpose>Customization</configurationExtensionPurpose>"
+        } else {
+            ""
+        };
+        std::fs::write(
+            dir.join("Configuration/Configuration.mdo"),
+            format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+                 <mdclass:Configuration xmlns:mdclass=\"http://g5.1c.ru/v8/dt/metadata/mdclass\" uuid=\"a\">\
+                 <name>К</name><!-- <configurationExtensionPurpose> in a comment declares nothing -->\
+                 {purpose}<compatibilityMode>8.3.27</compatibilityMode></mdclass:Configuration>"
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn an_edt_root_is_a_configuration_marker_of_either_kind() {
+        let dir = tempdir().unwrap();
+        edt_root(dir.path(), false);
+        let marker = super::configuration_marker_in(dir.path()).unwrap();
+        assert_eq!(marker.format, bsl_conventions::SourceFormat::Edt);
+        assert!(marker.path.ends_with("Configuration.mdo"));
+        assert_eq!(configuration_kind(dir.path()), ConfigurationKind::Configuration);
+        edt_root(dir.path(), true);
+        assert_eq!(configuration_kind(dir.path()), ConfigurationKind::Extension);
+        // A configurator dump beside it wins the marker: the two never coexist
+        // in practice, and the older layout keeps its precedence.
+        std::fs::write(dir.path().join("Configuration.xml"), "<Configuration/>").unwrap();
+        assert_eq!(
+            super::configuration_marker_in(dir.path()).unwrap().format,
+            bsl_conventions::SourceFormat::Designer
+        );
+    }
+
+    #[test]
+    fn an_edt_project_is_found_by_search_and_an_edt_extension_is_reported() {
+        let dir = tempdir().unwrap();
+        edt_root(&dir.path().join("src"), false);
+        let project = Project::new(dir.path()).unwrap();
+        assert_eq!(project.configuration_path(), Some(dir.path().join("src").as_path()));
+        assert!(project.standalone_extension_notice().is_none());
+
+        let ext = tempdir().unwrap();
+        edt_root(ext.path(), true);
+        let project = Project::new(ext.path()).unwrap();
+        assert_eq!(project.configuration_path(), None);
+        assert!(project.standalone_extension_notice().is_some());
+    }
+
+    #[test]
+    fn an_edt_extension_is_accepted_beside_an_edt_base() {
+        let dir = tempdir().unwrap();
+        edt_root(&dir.path().join("src/cf"), false);
+        edt_root(&dir.path().join("src/cfe/Ext"), true);
+        let project = Project::new(dir.path()).unwrap();
+        assert_eq!(project.configuration_path(), Some(dir.path().join("src/cf").as_path()));
+        assert_eq!(project.extension_paths().len(), 1);
+        assert!(project.extension_paths()[0].1.ends_with("Ext"));
+    }
+
     #[test]
     fn a_base_less_extension_project_says_so_whichever_shape_it_takes() {
         fn extension_at(root: &std::path::Path, rel: &str) {

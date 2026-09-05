@@ -2,7 +2,10 @@ use std::path::Path;
 
 pub const SOURCE_EXTENSIONS: &[&str] = &[bsl_conventions::BSL_EXTENSION];
 
-pub const METADATA_WATCHED_EXTENSIONS: &[&str] = &[bsl_conventions::XML_EXTENSION];
+/// Descriptors of both layouts: the configurator's `.xml`, EDT's `.mdo`,
+/// `Form.form` and `Rights.rights`.
+pub const METADATA_WATCHED_EXTENSIONS: &[&str] =
+    &[bsl_conventions::XML_EXTENSION, bsl_conventions::MDO_EXTENSION, "form", "rights"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileRole {
@@ -33,7 +36,8 @@ pub fn is_metadata_path(path: &Path) -> bool {
 }
 
 /// Whether `path` is a common module's body source — the
-/// `…/CommonModules/<Name>/Ext/Module.bsl` layout the designer export uses.
+/// `…/CommonModules/<Name>/Ext/Module.bsl` layout the designer export uses, or
+/// EDT's `…/CommonModules/<Name>/Module.bsl`.
 ///
 /// Such a file is ordinary BSL source (so it flows through the source-change path,
 /// not the metadata-XML one), yet creating or deleting it changes a common module's
@@ -58,20 +62,22 @@ pub fn is_substrate_listed_body_path(path: &Path) -> bool {
     })
 }
 
-/// The `<Family>` directory name for a `<Family>/<Name>/Ext/Module.bsl` layout, if
-/// `path` matches it.
+/// The `<Family>` directory name for a `<Family>/<Name>/Ext/Module.bsl` or an
+/// EDT `<Family>/<Name>/Module.bsl` layout, if `path` matches either.
 fn substrate_listed_family(path: &Path) -> Option<&str> {
     use bsl_conventions::{conventional_of, ConventionalName};
     let file = path.file_name().and_then(|n| n.to_str())?;
     if conventional_of(file) != Some(ConventionalName::Module) {
         return None;
     }
-    let ext_dir = path.parent()?;
-    let ext = ext_dir.file_name().and_then(|n| n.to_str())?;
-    if conventional_of(ext) != Some(ConventionalName::Ext) {
-        return None;
-    }
-    ext_dir.parent()?.parent()?.file_name().and_then(|n| n.to_str())
+    let parent = path.parent()?;
+    let parent_name = parent.file_name().and_then(|n| n.to_str())?;
+    let object_dir = if conventional_of(parent_name) == Some(ConventionalName::Ext) {
+        parent.parent()?
+    } else {
+        parent
+    };
+    object_dir.parent()?.file_name().and_then(|n| n.to_str())
 }
 
 #[cfg(test)]
@@ -82,6 +88,21 @@ mod tests {
     fn a_case_variant_body_is_still_substrate_listed() {
         assert!(is_substrate_listed_body_path(Path::new("/ws/CommonModules/X/EXT/MODULE.BSL")));
         assert!(is_common_module_body_path(Path::new("/ws/CommonModules/X/EXT/MODULE.BSL")));
+    }
+
+    #[test]
+    fn edt_descriptors_are_metadata_and_an_edt_common_module_body_is_listed() {
+        assert_eq!(file_role(Path::new("/ws/Catalogs/C/C.mdo")), FileRole::MetadataWatched);
+        assert_eq!(
+            file_role(Path::new("/ws/Catalogs/C/Forms/F/Form.form")),
+            FileRole::MetadataWatched
+        );
+        assert_eq!(file_role(Path::new("/ws/Roles/R/Rights.rights")), FileRole::MetadataWatched);
+        assert!(is_common_module_body_path(Path::new("/ws/CommonModules/X/Module.bsl")));
+        assert!(is_substrate_listed_body_path(Path::new("/ws/HTTPServices/S/Module.bsl")));
+        assert!(!is_substrate_listed_body_path(Path::new("/ws/Catalogs/C/ObjectModule.bsl")));
+        assert!(!is_common_module_body_path(Path::new("/ws/Module.bsl")));
+        assert!(!is_common_module_body_path(Path::new("Module.bsl")));
     }
 
     #[test]
