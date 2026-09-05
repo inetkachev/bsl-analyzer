@@ -10,4 +10,6 @@
 //! documentation; no third-party reader of the format was consulted.
 
 pub(crate) mod helpers;
+pub(crate) mod metadata_object;
+pub(crate) mod properties;
 pub(crate) mod types;

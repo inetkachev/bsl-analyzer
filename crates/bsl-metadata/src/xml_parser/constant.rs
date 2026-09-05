@@ -8,6 +8,9 @@ pub fn parse_constant_xml(xml: &str) -> Result<MetadataObject> {
     let _span = tracing::debug_span!("parse_constant_xml").entered();
 
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::metadata_object::parse_edt_constant(&doc);
+    }
     let mdo = find_mdo_element(&doc)
         .ok_or_else(|| MetadataError::InvalidFormat("No Constant element found".to_string()))?;
 

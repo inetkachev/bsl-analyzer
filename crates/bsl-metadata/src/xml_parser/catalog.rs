@@ -76,6 +76,9 @@ pub fn parse_external_report_xml(xml: &str) -> Result<MetadataObject> {
 
 fn parse_metadata_object_xml(xml: &str, mdo_type: MdoType) -> Result<MetadataObject> {
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::metadata_object::parse_edt_metadata_object(&doc, mdo_type);
+    }
 
     let mdo_node = find_mdo_element(&doc)
         .ok_or_else(|| MetadataError::InvalidFormat("No MDO element found".to_string()))?;
@@ -244,7 +247,15 @@ fn build_ext_dimension_types_section(
             Some(AttributeType::Ref { mdo_type, name: name.to_string() })
         })
         .unwrap_or(AttributeType::Unknown);
+    build_ext_dimension_types_section_from_type(ext_dim_kind_type, ext_dimension_flags)
+}
 
+/// The implicit `ВидыСубконто` tabular section of a chart of accounts, from the
+/// already-resolved ext-dimension kind: shared by both descriptor spellings.
+pub(super) fn build_ext_dimension_types_section_from_type(
+    ext_dim_kind_type: AttributeType,
+    ext_dimension_flags: Vec<Attribute>,
+) -> TabularSection {
     let nil_uuid = uuid::Uuid::nil();
     let mut section = TabularSection::new(nil_uuid, "ВидыСубконто");
     section.set_name_en(Some("ExtDimensionTypes".to_string()));
@@ -274,7 +285,7 @@ fn build_ext_dimension_types_section(
 /// `ВидРасчета` column (self-ref); `НомерСтроки`/`Ссылка` come from the generic
 /// tabular-section machinery. The platform omits all three when the chart does not
 /// depend on calculation types, which the caller already gated on.
-fn build_calculation_type_dependency_sections(chart_name: &str) -> Vec<TabularSection> {
+pub(super) fn build_calculation_type_dependency_sections(chart_name: &str) -> Vec<TabularSection> {
     let nil_uuid = uuid::Uuid::nil();
     [
         ("ВытесняющиеВидыРасчета", "DisplacingCalculationTypes"),
@@ -327,7 +338,7 @@ fn parse_register_records(props_node: roxmltree::Node<'_, '_>) -> Vec<(MdoType, 
         .collect()
 }
 
-fn parse_code_series(s: &str) -> CodeSeries {
+pub(super) fn parse_code_series(s: &str) -> CodeSeries {
     match s {
         "WholeCatalog" | "WholeCharacteristicKind" | "WholeChartOfAccounts" => {
             CodeSeries::WholeCatalog
