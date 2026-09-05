@@ -9,6 +9,20 @@ and this project adheres to [Date-based Versioning](docs/contributing/VERSIONING
 
 ### Added
 
+- Метаданные из проекта 1C:EDT. Корень с `Configuration/Configuration.mdo`
+  распознаётся наравне с `Configuration.xml`, формат определяется по маркеру
+  без флагов; `--configuration-root`, `--extension` и ключи `[source]`
+  принимают корни обоих форматов. Из `.mdo`, `Form.form` и `Rights.rights`
+  читаются те же метаданные, что из выгрузки Конфигуратора: общие модули,
+  объекты с реквизитами, табличными частями и предопределёнными элементами,
+  регистры, определяемые типы, подписки, регламентные задания, роли,
+  подсистемы, HTTP- и web-сервисы, формы. Модули EDT-раскладки
+  (`CommonModules/<Имя>/Module.bsl`, `Catalogs/<Имя>/Forms/<Форма>/Module.bsl`,
+  `Configuration/SessionModule.bsl`) получают те же типы, что их двойники в
+  выгрузке. Заимствованные объекты расширения (`objectBelonging=Adopted`)
+  помечаются в модели; тот же признак теперь читается и из
+  `ObjectBelonging` выгрузки Конфигуратора. Разбор Designer XML не менялся.
+
 - Внешние обработки и отчёты (EPF/ERF) как источник третьего вида
   (github#45): объявляются в `[source] externals` или флагом
   `--external NAME=PATH`, без настройки обнаруживаются в `src/epf/*` и

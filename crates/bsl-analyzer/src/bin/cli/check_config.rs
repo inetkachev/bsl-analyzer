@@ -247,14 +247,15 @@ fn build_check_config_report(
         used_root.unwrap_or("auto-discovery"),
         providers.configuration_root.label(config_path)
     );
-    // A declared root without a `Configuration.xml` does not decide anything —
-    // the model warns and searches instead. Saying so beats printing the value
-    // next to a provider that contradicts it.
+    // A declared root without a configuration descriptor does not decide
+    // anything — the model warns and searches instead. Saying so beats printing
+    // the value next to a provider that contradicts it.
     if used_root.is_none() {
         if let Some(ignored) = declared_root {
             let _ = writeln!(
                 out,
-                "               (declared \"{ignored}\" ignored: no Configuration.xml there)"
+                "               (declared \"{ignored}\" ignored: no Configuration.xml or \
+                 Configuration/Configuration.mdo there)"
             );
         }
     }

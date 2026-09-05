@@ -1008,16 +1008,46 @@ fn is_root_descriptor(roots: Option<&bsl_search::WorkspaceRoots>, xml: &Path) ->
     if at_root_of_a_registered_root {
         return true;
     }
-    let beside_a_configuration_xml = xml.parent().is_some_and(|dir| {
-        bsl_conventions::find_child_ci(
-            dir,
-            bsl_conventions::ConventionalName::ConfigurationXml.canonical(),
-        )
-        .is_some_and(|found| found.is_file())
+    // An EDT descriptor lies one level down, in `Configuration/`, so the root
+    // it belongs to is the directory above that.
+    let beside_a_marker = xml.parent().is_some_and(|dir| {
+        project_model::configuration_marker_in(dir).is_some()
+            || dir.parent().is_some_and(|root| {
+                bsl_conventions::edt_configuration_mdo_in(root, &bsl_conventions::RealFs)
+                    .is_some_and(|marker| marker.parent() == Some(dir))
+            })
     });
-    beside_a_configuration_xml
-        || xml.file_name().and_then(|n| n.to_str()).and_then(bsl_conventions::conventional_of)
-            == Some(bsl_conventions::ConventionalName::ConfigurationXml)
+    beside_a_marker
+        || matches!(
+            xml.file_name().and_then(|n| n.to_str()).and_then(bsl_conventions::conventional_of),
+            Some(
+                bsl_conventions::ConventionalName::ConfigurationXml
+                    | bsl_conventions::ConventionalName::ConfigurationMdo
+            )
+        )
+}
+
+#[cfg(test)]
+mod root_descriptor_tests {
+    use super::is_root_descriptor;
+
+    #[test]
+    fn an_edt_descriptor_and_its_neighbours_mark_the_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(src.join("Configuration")).unwrap();
+        std::fs::create_dir_all(src.join("Catalogs/Товары")).unwrap();
+        std::fs::write(src.join("Configuration/Configuration.mdo"), "<x/>").unwrap();
+        std::fs::write(src.join("Configuration/CommandInterface.cmi"), "<x/>").unwrap();
+        std::fs::write(src.join("Catalogs/Товары/Товары.mdo"), "<x/>").unwrap();
+
+        assert!(is_root_descriptor(None, &src.join("Configuration/Configuration.mdo")));
+        assert!(is_root_descriptor(None, &src.join("Configuration/CommandInterface.cmi")));
+        assert!(!is_root_descriptor(None, &src.join("Catalogs/Товары/Товары.mdo")));
+        // The descriptor's own name marks the root even when it is the file
+        // that vanished.
+        assert!(is_root_descriptor(None, &dir.path().join("gone/Configuration/Configuration.mdo")));
+    }
 }
 
 #[cfg(test)]

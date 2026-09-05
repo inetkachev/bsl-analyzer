@@ -26,8 +26,9 @@ use stdx::case::fold_lower_per_char;
 /// Source-set flags shared by every command that builds a project from argv.
 #[derive(Debug, Clone, Default, Args)]
 pub struct SourceSetArgs {
-    /// Root of the main configuration, relative to the project root (the
-    /// `Configuration.xml`-bearing directory, e.g. `src/cf`).
+    /// Root of the main configuration, relative to the project root: the
+    /// directory holding `Configuration.xml` (a configurator dump, e.g.
+    /// `src/cf`) or `Configuration/Configuration.mdo` (an EDT project's `src`).
     #[arg(long = "configuration-root", value_name = "PATH")]
     pub configuration_root: Option<String>,
 
@@ -92,7 +93,8 @@ impl fmt::Display for SourceSetArgsError {
         match self {
             Self::ConfigurationRootNotFound { value, expected } => write!(
                 f,
-                "--configuration-root {value}: no Configuration.xml at {}",
+                "--configuration-root {value}: no Configuration.xml or \
+                 Configuration/Configuration.mdo at {}",
                 expected.display()
             ),
             Self::EmptyExtensionName { value } => {
@@ -552,14 +554,11 @@ fn is_extension_dir(root: &Path, rel: &str) -> bool {
     root_configuration_xml(&root.join(rel)).is_some()
 }
 
-/// The directory's `Configuration.xml` as a real file, in whatever ASCII case
-/// the tree spells it.
+/// The directory's configuration descriptor as a real file — `Configuration.xml`
+/// or `Configuration/Configuration.mdo` — in whatever ASCII case the tree spells
+/// it. The project model owns the probe; the flag only repeats its answer.
 fn root_configuration_xml(dir: &Path) -> Option<std::path::PathBuf> {
-    bsl_conventions::find_child_ci(
-        dir,
-        bsl_conventions::ConventionalName::ConfigurationXml.canonical(),
-    )
-    .filter(|p| p.is_file())
+    project_model::configuration_marker_in(dir).map(|marker| marker.path)
 }
 
 /// Where a resolved source-set field actually came from. Reported per field
@@ -819,6 +818,20 @@ mod tests {
                 _ => None,
             })
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn configuration_root_accepts_an_edt_root() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(src.join("Configuration")).unwrap();
+        std::fs::write(src.join("Configuration/Configuration.mdo"), "<x/>").unwrap();
+        let resolved =
+            args(&["--configuration-root", "src"]).resolve_configuration_root(dir.path()).unwrap();
+        assert_eq!(resolved.as_deref(), Some("src"));
+        let missing =
+            args(&["--configuration-root", "nowhere"]).resolve_configuration_root(dir.path());
+        assert!(missing.is_err());
     }
 
     #[test]
