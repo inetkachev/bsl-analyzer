@@ -31,6 +31,9 @@ fn parse_register_xml(xml: &str, mdo_type: MdoType) -> Result<Register> {
     let _span = tracing::debug_span!("parse_register_xml", ?mdo_type).entered();
 
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::register::parse_edt_register(&doc, mdo_type);
+    }
 
     let mdo = find_mdo_element(&doc)
         .ok_or_else(|| MetadataError::InvalidFormat("No register element found".to_string()))?;
@@ -199,7 +202,10 @@ fn parse_register_attr_node(
     Ok(())
 }
 
-fn parse_periodicity(periodicity: Option<&str>, mdo_type: MdoType) -> Option<RegisterPeriodicity> {
+pub(super) fn parse_periodicity(
+    periodicity: Option<&str>,
+    mdo_type: MdoType,
+) -> Option<RegisterPeriodicity> {
     if mdo_type != MdoType::InformationRegister {
         return None;
     }
@@ -214,7 +220,7 @@ fn parse_periodicity(periodicity: Option<&str>, mdo_type: MdoType) -> Option<Reg
     })
 }
 
-fn parse_register_type(
+pub(super) fn parse_register_type(
     register_type: Option<&str>,
     mdo_type: MdoType,
 ) -> Option<AccumulationRegisterType> {

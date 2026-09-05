@@ -7,6 +7,9 @@ pub fn parse_event_subscription_xml(xml: &str) -> Result<EventSubscription> {
     let _span = tracing::debug_span!("parse_event_subscription_xml").entered();
 
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::simple::parse_edt_event_subscription(&doc);
+    }
     let mdo = find_mdo_element(&doc).ok_or_else(|| {
         MetadataError::InvalidFormat("No EventSubscription element found".to_string())
     })?;

@@ -9,6 +9,9 @@ pub fn parse_web_service_xml(xml: &str, name: &str) -> Result<WebService> {
     let _span = tracing::debug_span!("parse_web_service_xml", name).entered();
 
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::simple::parse_edt_web_service(&doc, name);
+    }
     let mdo = find_mdo_element(&doc)
         .ok_or_else(|| MetadataError::InvalidFormat("No WebService element found".to_string()))?;
 

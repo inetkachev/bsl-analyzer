@@ -9,6 +9,9 @@ pub fn parse_common_module_xml(xml: &str) -> Result<CommonModule> {
     let _span = tracing::debug_span!("parse_common_module_xml").entered();
 
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::common_module::parse_edt_common_module(&doc);
+    }
     let mdo = find_mdo_element(&doc)
         .ok_or_else(|| MetadataError::InvalidFormat("No CommonModule element found".to_string()))?;
 

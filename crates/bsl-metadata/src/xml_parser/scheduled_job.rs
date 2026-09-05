@@ -7,6 +7,9 @@ pub fn parse_scheduled_job_xml(xml: &str) -> Result<ScheduledJob> {
     let _span = tracing::debug_span!("parse_scheduled_job_xml").entered();
 
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::simple::parse_edt_scheduled_job(&doc);
+    }
     let mdo = find_mdo_element(&doc)
         .ok_or_else(|| MetadataError::InvalidFormat("No ScheduledJob element found".to_string()))?;
 

@@ -12,6 +12,9 @@ pub fn parse_subsystem_xml(xml: &str) -> Result<Subsystem> {
     let _span = tracing::debug_span!("parse_subsystem_xml").entered();
 
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::simple::parse_edt_subsystem(&doc);
+    }
     let mdo = find_mdo_element(&doc)
         .ok_or_else(|| MetadataError::InvalidFormat("No metadata element found".to_string()))?;
     // Only a `<Subsystem>` element is a subsystem — a different metadata object that happens
@@ -63,7 +66,7 @@ pub fn parse_subsystem_xml(xml: &str) -> Result<Subsystem> {
 /// `<Content>` into a recognised `(MdoType, name)`. The prefix is the English MDObjectRef
 /// type; unknown types (or malformed refs) are skipped so an unparseable member never
 /// invents an edge.
-fn parse_mdo_ref(raw: &str) -> Option<(MdoType, String)> {
+pub(super) fn parse_mdo_ref(raw: &str) -> Option<(MdoType, String)> {
     let Some((prefix, name)) = raw.split_once('.') else {
         if !raw.is_empty() {
             tracing::debug!(raw, "subsystem content ref has no type prefix; skipped");

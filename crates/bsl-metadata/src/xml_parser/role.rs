@@ -10,6 +10,9 @@ pub fn parse_role_xml(xml: &str) -> Result<Role> {
     let _span = tracing::debug_span!("parse_role_xml").entered();
 
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::simple::parse_edt_role(&doc);
+    }
     let mdo = find_mdo_element(&doc)
         .ok_or_else(|| MetadataError::InvalidFormat("No Role element found".to_string()))?;
 

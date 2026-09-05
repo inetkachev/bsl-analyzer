@@ -6,6 +6,9 @@ use super::type_parser::parse_type_xml;
 
 pub fn parse_defined_type_xml(xml: &str) -> Result<DefinedType> {
     let doc = parse_xml(xml)?;
+    if super::edt::helpers::is_edt_document(&doc) {
+        return super::edt::simple::parse_edt_defined_type(&doc);
+    }
     let mdo = find_mdo_element(&doc)
         .ok_or_else(|| MetadataError::InvalidFormat("No DefinedType element found".to_string()))?;
 
