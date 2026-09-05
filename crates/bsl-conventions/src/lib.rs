@@ -14,9 +14,11 @@
 //! bilingual and their equivalence — including `ё` variants and Unicode
 //! composition — is owned by `bsl_metadata`'s module-path spec.
 
+mod layout;
 mod probe;
 mod tree;
 
+pub use layout::{edt_configuration_mdo_in, SourceFormat};
 pub use probe::{
     find_child_ci, find_child_ci_in, find_child_stem_exact, find_child_stem_exact_in,
     resolve_chain_ci, resolve_chain_ci_in,
@@ -55,6 +57,13 @@ pub enum ConventionalName {
     PredefinedXml,
     RightsXml,
     FormXml,
+    // EDT project layout.
+    /// The `Configuration/` directory at an EDT source root: holds the
+    /// configuration descriptor and the root modules.
+    ConfigurationDir,
+    ConfigurationMdo,
+    FormForm,
+    RightsRights,
 }
 
 impl ConventionalName {
@@ -80,6 +89,10 @@ impl ConventionalName {
         ConventionalName::PredefinedXml,
         ConventionalName::RightsXml,
         ConventionalName::FormXml,
+        ConventionalName::ConfigurationDir,
+        ConventionalName::ConfigurationMdo,
+        ConventionalName::FormForm,
+        ConventionalName::RightsRights,
     ];
 
     /// The canonical spelling the configurator writes. Constructing a path or
@@ -108,6 +121,10 @@ impl ConventionalName {
             ConventionalName::PredefinedXml => "Predefined.xml",
             ConventionalName::RightsXml => "Rights.xml",
             ConventionalName::FormXml => "Form.xml",
+            ConventionalName::ConfigurationDir => "Configuration",
+            ConventionalName::ConfigurationMdo => "Configuration.mdo",
+            ConventionalName::FormForm => "Form.form",
+            ConventionalName::RightsRights => "Rights.rights",
         }
     }
 
@@ -141,6 +158,8 @@ pub const BSL_EXTENSION: &str = "bsl";
 pub const XML_EXTENSION: &str = "xml";
 /// The extension of protected (compiled) module containers.
 pub const BIN_EXTENSION: &str = "bin";
+/// The extension of EDT metadata descriptors.
+pub const MDO_EXTENSION: &str = "mdo";
 
 /// Case-insensitive extension check on a path, the one way the workspace asks
 /// "is this a `.bsl` / `.xml` file".
@@ -171,7 +190,7 @@ mod tests {
 
     #[test]
     fn an_object_name_is_not_conventional() {
-        for name in ["Товары", "Alpha", "ExtModule", "ModuleX", "Configuration"] {
+        for name in ["Товары", "Alpha", "ExtModule", "ModuleX", "Configurations"] {
             assert_eq!(conventional_of(name), None, "{name}");
         }
     }
@@ -205,7 +224,11 @@ mod tests {
             Configuration.xml
             Predefined.xml
             Rights.xml
-            Form.xml"#]]
+            Form.xml
+            Configuration
+            Configuration.mdo
+            Form.form
+            Rights.rights"#]]
         .assert_eq(&listing);
     }
 
@@ -218,6 +241,37 @@ mod tests {
         assert!(!has_extension(Path::new("a/Module"), BSL_EXTENSION));
         assert!(str_has_extension("Meta.XML", XML_EXTENSION));
         assert!(!str_has_extension("Meta", XML_EXTENSION));
+    }
+
+    #[test]
+    fn edt_names_are_in_the_dictionary() {
+        assert_eq!(conventional_of("Configuration"), Some(ConventionalName::ConfigurationDir));
+        assert_eq!(conventional_of("configuration.MDO"), Some(ConventionalName::ConfigurationMdo));
+        assert_eq!(conventional_of("form.FORM"), Some(ConventionalName::FormForm));
+        assert_eq!(conventional_of("Rights.rights"), Some(ConventionalName::RightsRights));
+        assert!(str_has_extension("Справочник1.mdo", MDO_EXTENSION));
+    }
+
+    #[test]
+    fn a_root_module_is_recognised_under_ext_and_under_configuration() {
+        for path in [
+            "src/cf/Ext/SessionModule.bsl",
+            r"C:\p\src\Ext\SessionModule.bsl",
+            "src/Configuration/SessionModule.bsl",
+            r"C:\p\src\Configuration\sessionmodule.bsl",
+        ] {
+            assert!(path_is_root_module(path, ConventionalName::SessionModule), "{path}");
+            assert!(path_ends_with_ext_child(path, ConventionalName::SessionModule), "{path}");
+        }
+        assert!(!path_is_root_module(
+            "Catalogs/Configuration/ObjectModule.bsl",
+            ConventionalName::SessionModule
+        ));
+        assert!(!path_is_root_module(
+            "src/Other/SessionModule.bsl",
+            ConventionalName::SessionModule
+        ));
+        assert!(!path_is_root_module("SessionModule.bsl", ConventionalName::SessionModule));
     }
 
     #[test]
@@ -262,14 +316,26 @@ impl SegmentMatch {
     }
 }
 
-/// Whether the path's tail is `…/Ext/<name>` in any ASCII case, with either
-/// separator — the way diagnostics classify a module by its final segments.
-/// The `Ext` HERE is positional: two segments from the end is the service
-/// level, so an object named `Ext` (one level higher) cannot match.
-pub fn path_ends_with_ext_child(path: &str, name: ConventionalName) -> bool {
+/// Whether the path names a root module of the configuration: the file is the
+/// given conventional name and its parent is the service level — `Ext` in a
+/// configurator dump, `Configuration` in an EDT project — in any ASCII case,
+/// with either separator. Positional on purpose: two segments from the end is
+/// the service level, so an object named `Ext` or `Configuration` one level
+/// higher cannot match, and neither can a bare file name.
+pub fn path_is_root_module(path: &str, name: ConventionalName) -> bool {
     let mut segments = path.rsplit(['/', '\\']);
     let (Some(last), Some(prev)) = (segments.next(), segments.next()) else {
         return false;
     };
-    conventional_of(last) == Some(name) && conventional_of(prev) == Some(ConventionalName::Ext)
+    conventional_of(last) == Some(name)
+        && matches!(
+            conventional_of(prev),
+            Some(ConventionalName::Ext | ConventionalName::ConfigurationDir)
+        )
+}
+
+/// The historical name of [`path_is_root_module`]; diagnostics call it by
+/// this name.
+pub fn path_ends_with_ext_child(path: &str, name: ConventionalName) -> bool {
+    path_is_root_module(path, name)
 }

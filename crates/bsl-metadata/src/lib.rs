@@ -24,6 +24,7 @@ pub mod traits;
 pub mod web_service;
 pub mod xml_parser;
 
+pub use bsl_conventions::SourceFormat;
 pub use common_module::{CommonModule, CommonModuleBuilder};
 pub use configuration::Configuration;
 pub use defined_type::{DefinedType, DefinedTypeBuilder};
