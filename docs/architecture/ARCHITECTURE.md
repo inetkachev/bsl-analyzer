@@ -134,7 +134,7 @@ bsl-analyzer
 | `base-db` | базовые Salsa-input'ы, source roots, file text |
 | `vfs`, `vfs-notify` | виртуальная файловая система и слежение за файлами |
 | `project-model` | загрузка конфигурации проекта, legacy JSON-конфигов и search-настроек |
-| `bsl-metadata` | чтение `Configuration.xml` и метаданных 1С |
+| `bsl-metadata` | чтение метаданных 1С из выгрузки Конфигуратора (`Configuration.xml`, `*.xml`) и из проекта 1C:EDT (`Configuration/Configuration.mdo`, `*.mdo`, `Form.form`) |
 | `bsl-platform` | модели платформенных типов, API и курируемые оверлеи |
 | `cfg`, `cfg-types` | control-flow graph |
 | `dataflow` | reaching definitions и liveness analysis |
