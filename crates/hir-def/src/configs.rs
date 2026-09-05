@@ -91,7 +91,15 @@ impl ApplicationModuleKind {
     pub const ALL: [Self; 4] =
         [Self::Managed, Self::Ordinary, Self::Generic, Self::ExternalConnection];
 
+    /// The module's path under a configurator dump root: `Ext/<file>`.
     pub fn relative_path(self) -> std::path::PathBuf {
+        let [designer, _] = self.relative_paths();
+        designer
+    }
+
+    /// The module's path under a root in both layouts: `Ext/<file>` in a
+    /// configurator dump, `Configuration/<file>` in an EDT project.
+    pub fn relative_paths(self) -> [std::path::PathBuf; 2] {
         use bsl_conventions::ConventionalName as Conv;
 
         let file = match self {
@@ -100,7 +108,10 @@ impl ApplicationModuleKind {
             Self::Generic => Conv::ApplicationModule,
             Self::ExternalConnection => Conv::ExternalConnectionModule,
         };
-        std::path::Path::new(Conv::Ext.canonical()).join(file.canonical())
+        [
+            std::path::Path::new(Conv::Ext.canonical()).join(file.canonical()),
+            std::path::Path::new(Conv::ConfigurationDir.canonical()).join(file.canonical()),
+        ]
     }
 
     pub fn module_type(self) -> bsl_metadata::ModuleType {
@@ -463,4 +474,21 @@ pub trait ConfigsDatabase: DefDatabase {
         &self,
         source_root_id: base_db::SourceRootId,
     ) -> Arc<crate::call_graph::WorkspaceCallGraph>;
+}
+
+#[cfg(test)]
+mod application_module_path_tests {
+    use super::ApplicationModuleKind;
+
+    #[test]
+    fn an_application_module_has_a_path_in_both_layouts() {
+        let paths = ApplicationModuleKind::Managed.relative_paths();
+        assert_eq!(paths[0], std::path::Path::new("Ext/ManagedApplicationModule.bsl"));
+        assert_eq!(paths[1], std::path::Path::new("Configuration/ManagedApplicationModule.bsl"));
+        assert_eq!(ApplicationModuleKind::Managed.relative_path(), paths[0]);
+        assert_eq!(
+            ApplicationModuleKind::ExternalConnection.relative_paths()[1],
+            std::path::Path::new("Configuration/ExternalConnectionModule.bsl")
+        );
+    }
 }

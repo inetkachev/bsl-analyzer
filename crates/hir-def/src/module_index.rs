@@ -565,8 +565,9 @@ fn module_path_type_from_segment(segment: &str) -> Option<ModulePathType> {
 }
 
 /// A durable, path-derived identity for a form module. A managed form module lives
-/// at `…/Ext/Form/Module.bsl`; the owner is the metadata object whose `Forms/`
-/// directory contains it, or `None` for a common form (`CommonForms/…`).
+/// at `…/<Форма>/Ext/Form/Module.bsl` in a configurator dump and at
+/// `…/<Форма>/Module.bsl` in an EDT project; the owner is the metadata object whose
+/// `Forms/` directory contains it, or `None` for a common form (`CommonForms/…`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormKey {
     pub owner: Option<(MdoType, String)>,
@@ -585,22 +586,27 @@ pub fn parse_form_module_path(path: &str) -> Option<FormKey> {
     let normalized = path.replace('\\', "/");
     let parts: Vec<&str> = normalized.split('/').collect();
     let n = parts.len();
-    if n < 5
-        || conventional_of(parts[n - 1]) != Some(Conv::Module)
-        || conventional_of(parts[n - 2]) != Some(Conv::Form)
-        || conventional_of(parts[n - 3]) != Some(Conv::Ext)
-    {
+    if n < 3 || conventional_of(parts[n - 1]) != Some(Conv::Module) {
         return None;
     }
-    let form_name = parts[n - 4].to_string();
-    let container = parts[n - 5];
+    // The form directory is three segments above the module in a dump
+    // (`<Форма>/Ext/Form/Module.bsl`) and one in an EDT project.
+    let designer = n >= 5
+        && conventional_of(parts[n - 2]) == Some(Conv::Form)
+        && conventional_of(parts[n - 3]) == Some(Conv::Ext);
+    let form_index = if designer { n - 4 } else { n - 2 };
+    if form_index < 1 {
+        return None;
+    }
+    let form_name = parts[form_index].to_string();
+    let container = parts[form_index - 1];
     if container.eq_ignore_ascii_case("CommonForms") || container.fold_lower() == "общиеформы"
     {
         return Some(FormKey { owner: None, form_name });
     }
-    if conventional_of(container) == Some(Conv::Forms) && n >= 7 {
-        let object = parts[n - 6].to_string();
-        let mdo_type = module_path_type_from_segment(parts[n - 7])?.to_mdo_type()?;
+    if conventional_of(container) == Some(Conv::Forms) && form_index >= 3 {
+        let object = parts[form_index - 2].to_string();
+        let mdo_type = module_path_type_from_segment(parts[form_index - 3])?.to_mdo_type()?;
         return Some(FormKey { owner: Some((mdo_type, object)), form_name });
     }
     None
@@ -648,10 +654,17 @@ pub fn module_path_segment_modes(rel: &str) -> Option<Vec<bsl_conventions::Segme
     let parts: Vec<&str> = normalized.split('/').collect();
     let at = |i: usize, name: Conv| conventional_of(parts[i]) == Some(name);
     match parts.len() {
-        2 if at(0, Conv::Ext) => Some(vec![M::Ci, M::Ci]),
+        2 if at(0, Conv::Ext) || at(0, Conv::ConfigurationDir) => Some(vec![M::Ci, M::Ci]),
+        // EDT: `<Коллекция>/<Имя>/<Модуль>.bsl`, `CommonForms/<Форма>/Module.bsl`.
+        3 => Some(vec![M::Ci, M::Exact, M::Ci]),
         4 if at(2, Conv::Ext) => Some(vec![M::Ci, M::Exact, M::Ci, M::Ci]),
         5 if at(2, Conv::Ext) && at(3, Conv::Form) => {
             Some(vec![M::Ci, M::Exact, M::Ci, M::Ci, M::Ci])
+        }
+        // EDT: `<Коллекция>/<Имя>/Forms/<Форма>/Module.bsl` and
+        // `<Коллекция>/<Имя>/Commands/<Команда>/CommandModule.bsl`.
+        5 if at(2, Conv::Forms) || at(2, Conv::Commands) => {
+            Some(vec![M::Ci, M::Exact, M::Ci, M::Exact, M::Ci])
         }
         6 if at(2, Conv::Commands) && at(4, Conv::Ext) => {
             Some(vec![M::Ci, M::Exact, M::Ci, M::Exact, M::Ci, M::Ci])
@@ -665,6 +678,55 @@ pub fn module_path_segment_modes(rel: &str) -> Option<Vec<bsl_conventions::Segme
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn edt_form_module_paths_parse_to_the_same_keys() {
+        let designer =
+            super::parse_form_module_path("Catalogs/Товары/Forms/Форма/Ext/Form/Module.bsl")
+                .unwrap();
+        let edt = super::parse_form_module_path("Catalogs/Товары/Forms/Форма/Module.bsl").unwrap();
+        assert_eq!(designer, edt);
+        assert_eq!(
+            super::parse_form_module_path("CommonForms/Форма/Module.bsl").unwrap().owner,
+            None
+        );
+        assert_eq!(
+            super::parse_form_module_path("CommonForms/Форма/Module.bsl").unwrap().form_name,
+            "Форма"
+        );
+        assert_eq!(super::parse_form_module_path("Catalogs/Товары/Forms/Форма/Other.bsl"), None);
+        assert_eq!(super::parse_form_module_path("Forms/Форма/Module.bsl"), None);
+        assert_eq!(super::parse_form_module_path("CommonModules/Общий/Module.bsl"), None);
+    }
+
+    #[test]
+    fn edt_segment_modes_fold_conventional_segments_only() {
+        use bsl_conventions::SegmentMatch as M;
+        assert_eq!(
+            super::module_path_segment_modes("Configuration/SessionModule.bsl"),
+            Some(vec![M::Ci, M::Ci])
+        );
+        assert_eq!(
+            super::module_path_segment_modes("CommonModules/Общий/Module.bsl"),
+            Some(vec![M::Ci, M::Exact, M::Ci])
+        );
+        assert_eq!(
+            super::module_path_segment_modes("CommonForms/Форма/Module.bsl"),
+            Some(vec![M::Ci, M::Exact, M::Ci])
+        );
+        assert_eq!(
+            super::module_path_segment_modes("Catalogs/Товары/Forms/Форма/Module.bsl"),
+            Some(vec![M::Ci, M::Exact, M::Ci, M::Exact, M::Ci])
+        );
+        assert_eq!(
+            super::module_path_segment_modes("Catalogs/Товары/Commands/К/CommandModule.bsl"),
+            Some(vec![M::Ci, M::Exact, M::Ci, M::Exact, M::Ci])
+        );
+        assert_eq!(
+            super::module_path_segment_modes("CommonForms/Форма/Ext/Form/Module.bsl"),
+            Some(vec![M::Ci, M::Exact, M::Ci, M::Ci, M::Ci])
+        );
+    }
+
     #[test]
     fn a_case_variant_form_module_path_is_still_a_form() {
         let key = super::parse_form_module_path("Catalogs/C/Forms/F/EXT/FORM/MODULE.BSL")

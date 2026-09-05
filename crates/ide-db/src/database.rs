@@ -2378,16 +2378,18 @@ impl RootDatabaseImpl {
         };
         let source_root_id = self.file_source_root_input(file_id).source_root_id(self);
         let source_root = self.source_root_input(source_root_id);
-        let relative_path = kind.relative_path();
-        let modes =
-            hir::module_path_segment_modes(&relative_path.to_string_lossy()).unwrap_or_default();
         let mut bodies = hir::CommonModuleBodies::default();
-        for root in roots {
-            let candidate = root.join(&relative_path).to_string_lossy().into_owned();
-            if let Some(found) =
-                base_db::resolve_vfs_path_ci_query(self, source_root, candidate, &modes)
-            {
-                bodies.push(found, self.file_is_unread(found));
+        // Each root holds the module under its own layout's service level.
+        for relative_path in kind.relative_paths() {
+            let modes = hir::module_path_segment_modes(&relative_path.to_string_lossy())
+                .unwrap_or_default();
+            for root in &roots {
+                let candidate = root.join(&relative_path).to_string_lossy().into_owned();
+                if let Some(found) =
+                    base_db::resolve_vfs_path_ci_query(self, source_root, candidate, &modes)
+                {
+                    bodies.push(found, self.file_is_unread(found));
+                }
             }
         }
         Some(bodies)
@@ -2498,6 +2500,12 @@ impl RootDatabaseImpl {
             .filter(|p| p.is_file());
             if config_xml.is_some() {
                 tracing::debug!(?current, "Found configuration root via Configuration.xml");
+                return Some(current.to_path_buf());
+            }
+            if bsl_conventions::edt_configuration_mdo_in(current, &bsl_conventions::RealFs)
+                .is_some()
+            {
+                tracing::debug!(?current, "Found configuration root via Configuration.mdo");
                 return Some(current.to_path_buf());
             }
 

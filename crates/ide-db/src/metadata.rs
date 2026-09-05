@@ -1850,7 +1850,14 @@ pub fn get_module_type_from_uri(file_uri: &str) -> Option<bsl_metadata::ModuleTy
 
     use bsl_conventions::{conventional_of, ConventionalName as Conv};
     let last_kind = conventional_of(parts[parts.len() - 1]);
-    if parts.len() >= 2 && conventional_of(parts[parts.len() - 2]) == Some(Conv::Ext) {
+    // The root modules sit at the service level: `Ext/` in a configurator
+    // dump, `Configuration/` in an EDT project.
+    if parts.len() >= 2
+        && matches!(
+            conventional_of(parts[parts.len() - 2]),
+            Some(Conv::Ext | Conv::ConfigurationDir)
+        )
+    {
         match last_kind {
             Some(Conv::ManagedApplicationModule) => {
                 return Some(bsl_metadata::ModuleType::ManagedApplicationModule);
@@ -1874,11 +1881,21 @@ pub fn get_module_type_from_uri(file_uri: &str) -> Option<bsl_metadata::ModuleTy
             && conventional_of(parts[parts.len() - 2]) == Some(Conv::Form)
             && conventional_of(parts[parts.len() - 3]) == Some(Conv::Ext)
     };
+    // EDT keeps the module directly in the form's directory:
+    // `…/Forms/<Форма>/Module.bsl`.
+    let edt_form_suffix = |parts: &[&str]| {
+        parts.len() >= 3
+            && conventional_of(parts[parts.len() - 1]) == Some(Conv::Module)
+            && conventional_of(parts[parts.len() - 3]) == Some(Conv::Forms)
+    };
     if let Some(idx) = parts
         .iter()
         .rposition(|&p| p.eq_ignore_ascii_case("CommonForms") || p.fold_lower() == "общиеформы")
     {
         if parts.len() == idx + 5 && form_suffix(&parts) {
+            return Some(bsl_metadata::ModuleType::FormModule);
+        }
+        if parts.len() == idx + 3 && conventional_of(parts[parts.len() - 1]) == Some(Conv::Module) {
             return Some(bsl_metadata::ModuleType::FormModule);
         }
     }
@@ -1889,6 +1906,14 @@ pub fn get_module_type_from_uri(file_uri: &str) -> Option<bsl_metadata::ModuleTy
     if parts.len() >= 7
         && conventional_of(parts[parts.len() - 5]) == Some(Conv::Forms)
         && form_suffix(&parts)
+    {
+        return Some(bsl_metadata::ModuleType::FormModule);
+    }
+    // The EDT shape has no `Ext/Form` to vouch for the form, so the owner two
+    // segments above `Forms` has to be a collection instead.
+    if parts.len() >= 5
+        && edt_form_suffix(&parts)
+        && is_form_owner_collection(parts[parts.len() - 5])
     {
         return Some(bsl_metadata::ModuleType::FormModule);
     }
@@ -1910,9 +1935,13 @@ pub fn get_module_type_from_uri(file_uri: &str) -> Option<bsl_metadata::ModuleTy
     // still object/manager modules, and the file name says so; what the unknown
     // collection costs is the shape evidence, so the SERVICE level has to supply it.
     // Without either the path is just a file that happens to be named `ObjectModule.bsl`.
+    // An EDT project has no service level; there the collection itself, named
+    // from the fixed list of such collections, is the evidence.
     let has_service_level =
         parts.len() >= 2 && conventional_of(parts[parts.len() - 2]) == Some(Conv::Ext);
-    if has_service_level && parts.len() >= 4 {
+    let under_unmodelled_collection =
+        parts.len() >= 3 && is_unmodelled_collection(parts[parts.len() - 3]);
+    if (has_service_level && parts.len() >= 4) || under_unmodelled_collection {
         return match last_kind {
             Some(Conv::ObjectModule) => Some(bsl_metadata::ModuleType::ObjectModule),
             Some(Conv::ManagerModule) => Some(bsl_metadata::ModuleType::ManagerModule),
@@ -1925,6 +1954,37 @@ pub fn get_module_type_from_uri(file_uri: &str) -> Option<bsl_metadata::ModuleTy
     }
 
     None
+}
+
+/// The collections a dump holds that this crate has no `MdoType` for. Their
+/// object, manager, record-set and form modules are still what their file
+/// names say; the list only stands in for the service level an EDT path lacks.
+fn is_unmodelled_collection(segment: &str) -> bool {
+    const NAMES: &[&str] = &[
+        "documentjournals",
+        "settingsstorages",
+        "filtercriteria",
+        "documentnumerators",
+        "sequences",
+        "recalculations",
+        "externaldatasources",
+        "журналыдокументов",
+        "хранилищанастроек",
+        "критерииотбора",
+        "нумераторы",
+        "последовательности",
+        "перерасчеты",
+        "перерасчёты",
+        "внешниеисточникиданных",
+    ];
+    NAMES.contains(&segment.fold_lower().as_str())
+}
+
+/// Whether a segment two above `Forms` can own a form: a collection of
+/// objects that have forms, modelled or not.
+fn is_form_owner_collection(segment: &str) -> bool {
+    matches!(module_collection(segment), Some(ModuleCollection::Mdo(_)))
+        || is_unmodelled_collection(segment)
 }
 
 /// A dump directory that holds modules of one kind. The module type follows from
@@ -2393,6 +2453,24 @@ mod tests {
             // Раскладки EDT в дампе конфигуратора нет: плоское имя формы этот
             // классификатор не принимал и не принимает — ни в одном регистре.
             ("Catalogs/X/Forms/F/Ext/FormModule.bsl", false),
+            // Раскладка EDT: те же модули без служебного уровня `Ext`.
+            ("CommonModules/X/Module.bsl", true),
+            ("Catalogs/X/ObjectModule.bsl", true),
+            ("Catalogs/X/ManagerModule.bsl", true),
+            ("Catalogs/X/Forms/F/Module.bsl", true),
+            ("CommonForms/F/Module.bsl", true),
+            ("Catalogs/X/Commands/C/CommandModule.bsl", true),
+            ("CommonCommands/C/CommandModule.bsl", true),
+            ("InformationRegisters/X/RecordSetModule.bsl", true),
+            ("Constants/X/ValueManagerModule.bsl", true),
+            ("Configuration/SessionModule.bsl", true),
+            ("Configuration/ManagedApplicationModule.bsl", true),
+            ("DocumentJournals/X/ManagerModule.bsl", true),
+            ("SettingsStorages/X/ManagerModule.bsl", true),
+            ("DocumentJournals/X/Forms/F/Module.bsl", true),
+            ("Stray/X/ObjectModule.bsl", false),
+            ("Catalogs/X/Forms/F/Anything.bsl", false),
+            ("Stray/X/Forms/F/Module.bsl", false),
         ];
         for &name in bsl_conventions::ConventionalName::ALL {
             let canonical = name.canonical();
@@ -2410,6 +2488,46 @@ mod tests {
             let upper = path.to_ascii_uppercase();
             assert_eq!(get_module_type_from_uri(&upper), canonical, "{upper}");
         }
+    }
+
+    /// Путь EDT получает тот же тип модуля, что его двойник в выгрузке
+    /// Конфигуратора: одна конфигурация в двух раскладках.
+    #[test]
+    fn edt_paths_get_the_same_module_types_as_designer_paths() {
+        use bsl_metadata::ModuleType;
+        for (edt, designer) in [
+            ("src/CommonModules/X/Module.bsl", "src/CommonModules/X/Ext/Module.bsl"),
+            ("src/Catalogs/X/Forms/F/Module.bsl", "src/Catalogs/X/Forms/F/Ext/Form/Module.bsl"),
+            ("src/CommonForms/F/Module.bsl", "src/CommonForms/F/Ext/Form/Module.bsl"),
+            ("src/Configuration/SessionModule.bsl", "src/Ext/SessionModule.bsl"),
+            (
+                "src/Configuration/OrdinaryApplicationModule.bsl",
+                "src/Ext/OrdinaryApplicationModule.bsl",
+            ),
+            (
+                "src/DocumentJournals/J/ManagerModule.bsl",
+                "src/DocumentJournals/J/Ext/ManagerModule.bsl",
+            ),
+            (
+                "C:\\p\\src\\Catalogs\\X\\Forms\\F\\Module.bsl",
+                "src/Catalogs/X/Forms/F/Ext/Form/Module.bsl",
+            ),
+        ] {
+            assert_eq!(get_module_type_from_uri(edt), get_module_type_from_uri(designer), "{edt}");
+            assert_ne!(get_module_type_from_uri(edt), None, "{edt}");
+        }
+        assert_eq!(
+            get_module_type_from_uri("src/Catalogs/X/Forms/F/Module.bsl"),
+            Some(ModuleType::FormModule)
+        );
+        assert_eq!(
+            get_module_type_from_uri("src/Configuration/SessionModule.bsl"),
+            Some(ModuleType::SessionModule)
+        );
+        assert_eq!(
+            get_module_type_from_uri("src/DocumentJournals/J/ManagerModule.bsl"),
+            Some(ModuleType::ManagerModule)
+        );
     }
 
     /// Имя объекта может совпадать с именем коллекции (`Справочник.Константы`).
