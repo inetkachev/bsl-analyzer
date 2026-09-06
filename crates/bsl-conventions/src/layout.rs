@@ -8,7 +8,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{find_child_ci_in, ConventionalName, DirTree, EntryKind, RealFs};
+use crate::{
+    conventional_of, find_child_ci_in, ConventionalName, DirTree, EntryKind, RealFs, SegmentMatch,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SourceFormat {
@@ -49,6 +51,62 @@ pub fn edt_configuration_mdo_in(root: &Path, tree: &dyn DirTree) -> Option<PathB
     (tree.kind_of(&mdo) == Some(EntryKind::File)).then_some(mdo)
 }
 
+/// The spelling an EDT project gives to a module path CONSTRUCTED for a
+/// configurator dump: the service level goes away (`…/X/Ext/ObjectModule.bsl`
+/// is `…/X/ObjectModule.bsl`, `…/Forms/F/Ext/Form/Module.bsl` is
+/// `…/Forms/F/Module.bsl`) and a root module moves from `Ext/` to
+/// `Configuration/`. The match modes that came with the tail are trimmed the
+/// same way, so a caller that built its candidate for one layout resolves it
+/// in the other without knowing which one the root uses. `None` when the
+/// components carry no service level.
+pub fn edt_twin(
+    components: &[String],
+    tail_modes: &[SegmentMatch],
+) -> Option<(Vec<String>, Vec<SegmentMatch>)> {
+    let n = components.len();
+    let is = |i: usize, name: ConventionalName| conventional_of(&components[i]) == Some(name);
+    let mut twin = components.to_vec();
+    let mut modes = tail_modes.to_vec();
+    // The modes describe the last `tail_modes.len()` components; a component
+    // dropped inside that region takes its mode with it.
+    let head = n.saturating_sub(tail_modes.len());
+    let drop_at = |i: usize, twin: &mut Vec<String>, modes: &mut Vec<SegmentMatch>| {
+        if i >= head {
+            modes.remove(i - head);
+        }
+        twin.remove(i);
+    };
+
+    if n >= 5
+        && is(n - 3, ConventionalName::Ext)
+        && is(n - 2, ConventionalName::Form)
+        && is(n - 1, ConventionalName::Module)
+    {
+        drop_at(n - 2, &mut twin, &mut modes);
+        drop_at(n - 3, &mut twin, &mut modes);
+        return Some((twin, modes));
+    }
+    if n >= 2 && is(n - 2, ConventionalName::Ext) {
+        let root_module = matches!(
+            conventional_of(&components[n - 1]),
+            Some(
+                ConventionalName::SessionModule
+                    | ConventionalName::ExternalConnectionModule
+                    | ConventionalName::ManagedApplicationModule
+                    | ConventionalName::OrdinaryApplicationModule
+                    | ConventionalName::ApplicationModule
+            )
+        );
+        if root_module {
+            twin[n - 2] = ConventionalName::ConfigurationDir.canonical().to_string();
+        } else {
+            drop_at(n - 2, &mut twin, &mut modes);
+        }
+        return Some((twin, modes));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,6 +142,43 @@ mod tests {
         // directory too; only the descriptor inside it names the EDT layout.
         let tree = files(&["/ws/src/Configuration/SessionModule.bsl"]);
         assert_eq!(SourceFormat::detect(Path::new("/ws/src"), &tree), SourceFormat::Designer);
+    }
+
+    fn parts(path: &str) -> Vec<String> {
+        path.split('/').map(str::to_string).collect()
+    }
+
+    #[test]
+    fn a_designer_candidate_has_an_edt_twin() {
+        use SegmentMatch as M;
+        let (twin, modes) = edt_twin(
+            &parts("w/cf/Catalogs/X/Ext/ManagerModule.bsl"),
+            &[M::Ci, M::Exact, M::Ci, M::Ci],
+        )
+        .unwrap();
+        assert_eq!(twin, parts("w/cf/Catalogs/X/ManagerModule.bsl"));
+        assert_eq!(modes, vec![M::Ci, M::Exact, M::Ci]);
+
+        let (twin, modes) = edt_twin(
+            &parts("w/Catalogs/X/Forms/F/Ext/Form/Module.bsl"),
+            &[M::Ci, M::Exact, M::Ci, M::Exact, M::Ci, M::Ci, M::Ci],
+        )
+        .unwrap();
+        assert_eq!(twin, parts("w/Catalogs/X/Forms/F/Module.bsl"));
+        assert_eq!(modes, vec![M::Ci, M::Exact, M::Ci, M::Exact, M::Ci]);
+
+        let (twin, modes) =
+            edt_twin(&parts("w/cf/Ext/SessionModule.bsl"), &[M::Ci, M::Ci]).unwrap();
+        assert_eq!(twin, parts("w/cf/Configuration/SessionModule.bsl"));
+        assert_eq!(modes, vec![M::Ci, M::Ci]);
+
+        // A dropped component outside the mode tail leaves the modes alone.
+        let (twin, modes) = edt_twin(&parts("w/CommonModules/M/Ext/Module.bsl"), &[M::Ci]).unwrap();
+        assert_eq!(twin, parts("w/CommonModules/M/Module.bsl"));
+        assert_eq!(modes, vec![M::Ci]);
+
+        assert_eq!(edt_twin(&parts("w/CommonModules/M/Module.bsl"), &[M::Ci]), None);
+        assert_eq!(edt_twin(&parts("Module.bsl"), &[M::Ci]), None);
     }
 
     #[test]

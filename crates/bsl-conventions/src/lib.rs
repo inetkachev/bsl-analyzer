@@ -18,7 +18,7 @@ mod layout;
 mod probe;
 mod tree;
 
-pub use layout::{edt_configuration_mdo_in, SourceFormat};
+pub use layout::{edt_configuration_mdo_in, edt_twin, SourceFormat};
 pub use probe::{
     find_child_ci, find_child_ci_in, find_child_stem_exact, find_child_stem_exact_in,
     resolve_chain_ci, resolve_chain_ci_in,

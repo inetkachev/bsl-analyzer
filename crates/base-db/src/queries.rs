@@ -320,6 +320,23 @@ pub fn resolve_vfs_path_ci_query(
         vfs_path_str.replace('\\', "/").split('/').map(str::to_owned).collect();
     let source_root = source_root_input.root(db);
     let file_set = source_root.file_set();
+    if let Some(found) = scan_by_components(file_set, &candidate, tail_modes) {
+        return Some(found);
+    }
+    // A candidate built for the configurator's layout names a file an EDT
+    // project keeps without the service level; the twin spelling is the same
+    // file in that layout, so it is tried before giving up.
+    let (twin, twin_modes) = bsl_conventions::edt_twin(&candidate, tail_modes)?;
+    scan_by_components(file_set, &twin, &twin_modes)
+}
+
+/// One pass over the file set comparing componentwise: every leading
+/// component exactly, the last `tail_modes.len()` by their mode.
+fn scan_by_components(
+    file_set: &vfs::file_set::FileSet,
+    candidate: &[String],
+    tail_modes: &[bsl_conventions::SegmentMatch],
+) -> Option<FileId> {
     for file in file_set.iter() {
         let Some(path) = file_set.path_for_file(&file) else { continue };
         let real_str = path.as_path().to_string_lossy().replace('\\', "/");
@@ -392,6 +409,46 @@ mod ci_resolution_tests {
             &[M::Ci, M::StemExactExtCi],
         );
         assert!(found.is_none(), "стебель — имя объекта, его регистр значим");
+    }
+
+    /// Кандидат, построенный для выгрузки Конфигуратора (`…/Ext/ManagerModule.bsl`),
+    /// находит тот же модуль в проекте EDT, где служебного уровня нет.
+    #[test]
+    fn a_designer_candidate_resolves_to_its_edt_twin() {
+        let (db, root) = db_with(&[
+            "/w/src/Catalogs/X/ManagerModule.bsl",
+            "/w/src/Catalogs/X/Forms/F/Module.bsl",
+            "/w/src/Configuration/SessionModule.bsl",
+        ]);
+        let manager = resolve_vfs_path_ci_query(
+            &db,
+            root,
+            "/w/src/Catalogs/X/Ext/ManagerModule.bsl".to_string(),
+            &[M::Ci, M::Exact, M::Ci, M::Ci],
+        );
+        assert_eq!(manager, Some(vfs::FileId(0)));
+        let form = resolve_vfs_path_ci_query(
+            &db,
+            root,
+            "/w/src/Catalogs/X/Forms/F/Ext/Form/Module.bsl".to_string(),
+            &[M::Ci, M::Exact, M::Ci, M::Exact, M::Ci, M::Ci, M::Ci],
+        );
+        assert_eq!(form, Some(vfs::FileId(1)));
+        let session = resolve_vfs_path_ci_query(
+            &db,
+            root,
+            "/w/src/Ext/SessionModule.bsl".to_string(),
+            &[M::Ci, M::Ci],
+        );
+        assert_eq!(session, Some(vfs::FileId(2)));
+        // The object name stays exact in the twin too.
+        let other = resolve_vfs_path_ci_query(
+            &db,
+            root,
+            "/w/src/Catalogs/x/Ext/ManagerModule.bsl".to_string(),
+            &[M::Ci, M::Exact, M::Ci, M::Ci],
+        );
+        assert_eq!(other, None);
     }
 
     #[test]
