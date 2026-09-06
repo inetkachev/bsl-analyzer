@@ -137,6 +137,7 @@ mod tests {
         let mut config = Configuration::new("TestConfig");
 
         let catalog = MetadataObject {
+            object_belonging: Default::default(),
             mdo_type: MdoType::Catalog,
             name: "Номенклатура".to_string(),
             name_en: Some("Items".to_string()),

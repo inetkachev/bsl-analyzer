@@ -95,6 +95,7 @@ mod tests {
     fn make_test_scope_with_metadata() -> Scope<'static> {
         let mut config = bsl_metadata::Configuration::new("TestConfig");
         let catalog = bsl_metadata::MetadataObject {
+            object_belonging: Default::default(),
             mdo_type: bsl_metadata::MdoType::Catalog,
             name: "Валюты".to_string(),
             name_en: Some("Currencies".to_string()),

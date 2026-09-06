@@ -143,6 +143,7 @@ mod tests {
     fn make_test_scope_with_document() -> Scope<'static> {
         let mut config = Configuration::new("TestConfig");
         let document = bsl_metadata::MetadataObject {
+            object_belonging: Default::default(),
             mdo_type: MdoType::Document,
             name: "НачислениеИСписаниеБонусныхБаллов".to_string(),
             name_en: Some("BonusPointsAccrualAndWriteOff".to_string()),

@@ -2448,6 +2448,7 @@ fn test_join_paren_field_resolution() {
 
     let mut config = bsl_metadata::Configuration::new("Test");
     let catalog = bsl_metadata::MetadataObject {
+        object_belonging: Default::default(),
         mdo_type: bsl_metadata::MdoType::Catalog,
         name: "Валюты".to_string(),
         name_en: None,
