@@ -346,10 +346,16 @@ fn split_top_level(s: &str) -> impl Iterator<Item = &str> {
 /// land in the allowlist as out-of-class rows.
 fn is_conventional_shape(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
-    if lower.ends_with(".bsl") || lower.ends_with(".xml") || lower.ends_with(".bin") {
+    if lower.ends_with(".bsl")
+        || lower.ends_with(".obsl")
+        || lower.ends_with(".xml")
+        || lower.ends_with(".bin")
+        || lower.ends_with(".form")
+        || lower.ends_with(".oform")
+    {
         return true;
     }
-    if matches!(lower.as_str(), "bsl" | "xml" | "bin") {
+    if matches!(lower.as_str(), "bsl" | "obsl" | "xml" | "bin" | "oform") {
         return true;
     }
     if matches!(lower.as_str(), "ext" | "form" | "forms" | "commands") {

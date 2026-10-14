@@ -43,6 +43,10 @@ pub enum ConventionalName {
     ManagedApplicationModule,
     OrdinaryApplicationModule,
     ApplicationModule,
+    /// An ordinary (thick-client) form module in an EDT project tree. EDT itself
+    /// does not export ordinary forms; a third-party unpacker writes the module as
+    /// `Forms/<Form>/Module.obsl` next to a binary `Form.oform`.
+    ModuleObsl,
     /// The protected-module container next to a missing `Module.bsl`.
     ModuleBin,
     // Service directories.
@@ -55,6 +59,10 @@ pub enum ConventionalName {
     PredefinedXml,
     RightsXml,
     FormXml,
+    /// EDT: the managed form description next to `Forms/<Form>/Module.bsl`.
+    FormForm,
+    /// EDT tree: the binary ordinary-form container next to `Module.obsl`.
+    FormOform,
 }
 
 impl ConventionalName {
@@ -71,6 +79,7 @@ impl ConventionalName {
         ConventionalName::ManagedApplicationModule,
         ConventionalName::OrdinaryApplicationModule,
         ConventionalName::ApplicationModule,
+        ConventionalName::ModuleObsl,
         ConventionalName::ModuleBin,
         ConventionalName::Ext,
         ConventionalName::Form,
@@ -80,7 +89,36 @@ impl ConventionalName {
         ConventionalName::PredefinedXml,
         ConventionalName::RightsXml,
         ConventionalName::FormXml,
+        ConventionalName::FormForm,
+        ConventionalName::FormOform,
     ];
+
+    /// A module body file name (any source extension), as opposed to a service
+    /// directory or a metadata file.
+    pub const fn is_module_body(self) -> bool {
+        matches!(
+            self,
+            ConventionalName::Module
+                | ConventionalName::ObjectModule
+                | ConventionalName::ManagerModule
+                | ConventionalName::FormModule
+                | ConventionalName::CommandModule
+                | ConventionalName::RecordSetModule
+                | ConventionalName::ValueManagerModule
+                | ConventionalName::SessionModule
+                | ConventionalName::ExternalConnectionModule
+                | ConventionalName::ManagedApplicationModule
+                | ConventionalName::OrdinaryApplicationModule
+                | ConventionalName::ApplicationModule
+                | ConventionalName::ModuleObsl
+        )
+    }
+
+    /// `Module.bsl` or `Module.obsl`: the file a form (managed or ordinary) keeps
+    /// its module in when the tree is an EDT project.
+    pub const fn is_form_body(self) -> bool {
+        matches!(self, ConventionalName::Module | ConventionalName::ModuleObsl)
+    }
 
     /// The canonical spelling the configurator writes. Constructing a path or
     /// URI uses this; comparing an on-disk name never does directly — that is
@@ -99,6 +137,7 @@ impl ConventionalName {
             ConventionalName::ManagedApplicationModule => "ManagedApplicationModule.bsl",
             ConventionalName::OrdinaryApplicationModule => "OrdinaryApplicationModule.bsl",
             ConventionalName::ApplicationModule => "ApplicationModule.bsl",
+            ConventionalName::ModuleObsl => "Module.obsl",
             ConventionalName::ModuleBin => "Module.bin",
             ConventionalName::Ext => "Ext",
             ConventionalName::Form => "Form",
@@ -108,6 +147,8 @@ impl ConventionalName {
             ConventionalName::PredefinedXml => "Predefined.xml",
             ConventionalName::RightsXml => "Rights.xml",
             ConventionalName::FormXml => "Form.xml",
+            ConventionalName::FormForm => "Form.form",
+            ConventionalName::FormOform => "Form.oform",
         }
     }
 
@@ -137,10 +178,32 @@ pub fn conventional_of(name: &str) -> Option<ConventionalName> {
 
 /// The source extension of a `.bsl` module body.
 pub const BSL_EXTENSION: &str = "bsl";
+/// The source extension of an ordinary-form module body in an EDT project tree
+/// (see [`ConventionalName::ModuleObsl`]).
+pub const OBSL_EXTENSION: &str = "obsl";
+/// Every extension a BSL module body may carry. The one list the workspace scan,
+/// the LSP, the CLI and the graph agree on: a file with any of these is source.
+pub const SOURCE_EXTENSIONS: &[&str] = &[BSL_EXTENSION, OBSL_EXTENSION];
 /// The extension of metadata descriptors.
 pub const XML_EXTENSION: &str = "xml";
 /// The extension of protected (compiled) module containers.
 pub const BIN_EXTENSION: &str = "bin";
+
+/// Whether `extension` (without the dot, any ASCII case) is one of
+/// [`SOURCE_EXTENSIONS`].
+pub fn is_source_extension(extension: &str) -> bool {
+    SOURCE_EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(extension))
+}
+
+/// [`has_extension`] over every source extension: "is this a module body".
+pub fn has_source_extension(path: &std::path::Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(is_source_extension)
+}
+
+/// [`str_has_extension`] over every source extension.
+pub fn str_has_source_extension(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, e)| is_source_extension(e))
+}
 
 /// Case-insensitive extension check on a path, the one way the workspace asks
 /// "is this a `.bsl` / `.xml` file".
@@ -197,6 +260,7 @@ mod tests {
             ManagedApplicationModule.bsl
             OrdinaryApplicationModule.bsl
             ApplicationModule.bsl
+            Module.obsl
             Module.bin
             Ext
             Form
@@ -205,8 +269,30 @@ mod tests {
             Configuration.xml
             Predefined.xml
             Rights.xml
-            Form.xml"#]]
+            Form.xml
+            Form.form
+            Form.oform"#]]
         .assert_eq(&listing);
+    }
+
+    #[test]
+    fn source_extensions_cover_bsl_and_obsl_in_any_case() {
+        use std::path::Path;
+        assert!(is_source_extension("bsl"));
+        assert!(is_source_extension("OBSL"));
+        assert!(!is_source_extension("xml"));
+        assert!(!is_source_extension("oform"));
+        assert!(has_source_extension(Path::new("Catalogs/X/Forms/F/Module.obsl")));
+        assert!(has_source_extension(Path::new("CommonModules/X/Module.BSL")));
+        assert!(!has_source_extension(Path::new("Catalogs/X/Forms/F/Form.oform")));
+        assert!(str_has_source_extension("Module.obsl"));
+        assert!(!str_has_source_extension("Module.bin"));
+        assert_eq!(conventional_of("module.OBSL"), Some(ConventionalName::ModuleObsl));
+        assert!(ConventionalName::ModuleObsl.is_module_body());
+        assert!(ConventionalName::ModuleObsl.is_form_body());
+        assert!(!ConventionalName::ObjectModule.is_form_body());
+        assert!(!ConventionalName::FormForm.is_module_body());
+        assert_eq!(ConventionalName::ModuleObsl.canonical_stem(), "Module");
     }
 
     #[test]

@@ -149,11 +149,11 @@ fn module_name_from_path(path: &str) -> Option<Name> {
     }
 
     if let Some(filename) = path_str.rsplit('/').next() {
-        if bsl_conventions::str_has_extension(filename, bsl_conventions::BSL_EXTENSION) {
-            let name_without_ext =
-                &filename[..filename.len() - bsl_conventions::BSL_EXTENSION.len() - 1];
-            debug!(module_name = name_without_ext, "Extracted from filename");
-            return Some(Name::new(name_without_ext));
+        if let Some((name_without_ext, ext)) = filename.rsplit_once('.') {
+            if bsl_conventions::is_source_extension(ext) {
+                debug!(module_name = name_without_ext, "Extracted from filename");
+                return Some(Name::new(name_without_ext));
+            }
         }
     }
 

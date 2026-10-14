@@ -574,34 +574,52 @@ pub struct FormKey {
 }
 
 /// Parse a form module path into its owner + form name, or `None` if the path is
-/// not a managed form module. Mirrors the authoritative detection in
-/// `ide-db/src/metadata.rs` (managed-form suffix `…/Ext/Form/Module.bsl`),
-/// including its service-folder matching policy (`bsl_conventions`, ASCII-ci):
-/// a path this parser accepts but `metadata.rs` would not loads no
-/// `module_metadata.form`, so sharing one policy keeps the form pass from
-/// claiming a form whose metadata never loads.
+/// not a form module. Two layouts: the designer export (`…/Forms/<F>/Ext/Form/Module.bsl`,
+/// `CommonForms/<F>/Ext/Form/Module.bsl`) and the EDT project tree
+/// (`…/Forms/<F>/Module.bsl` for a managed form, `…/Forms/<F>/Module.obsl` for an
+/// ordinary one, likewise under `CommonForms/<F>/`). Mirrors the authoritative
+/// detection in `ide-db/src/metadata.rs`, including its service-folder matching
+/// policy (`bsl_conventions`, ASCII-ci): a path this parser accepts but
+/// `metadata.rs` would not loads no `module_metadata.form`, so sharing one
+/// policy keeps the form pass from claiming a form whose metadata never loads.
 pub fn parse_form_module_path(path: &str) -> Option<FormKey> {
     use bsl_conventions::{conventional_of, ConventionalName as Conv};
     let normalized = path.replace('\\', "/");
     let parts: Vec<&str> = normalized.split('/').collect();
     let n = parts.len();
-    if n < 5
-        || conventional_of(parts[n - 1]) != Some(Conv::Module)
-        || conventional_of(parts[n - 2]) != Some(Conv::Form)
-        || conventional_of(parts[n - 3]) != Some(Conv::Ext)
+    let is_common_forms = |segment: &str| {
+        segment.eq_ignore_ascii_case("CommonForms") || segment.fold_lower() == "общиеформы"
+    };
+    // Designer export: `<F>/Ext/Form/Module.bsl`.
+    if n >= 5
+        && conventional_of(parts[n - 1]) == Some(Conv::Module)
+        && conventional_of(parts[n - 2]) == Some(Conv::Form)
+        && conventional_of(parts[n - 3]) == Some(Conv::Ext)
     {
+        let form_name = parts[n - 4].to_string();
+        let container = parts[n - 5];
+        if is_common_forms(container) {
+            return Some(FormKey { owner: None, form_name });
+        }
+        if conventional_of(container) == Some(Conv::Forms) && n >= 7 {
+            let object = parts[n - 6].to_string();
+            let mdo_type = module_path_type_from_segment(parts[n - 7])?.to_mdo_type()?;
+            return Some(FormKey { owner: Some((mdo_type, object)), form_name });
+        }
         return None;
     }
-    let form_name = parts[n - 4].to_string();
-    let container = parts[n - 5];
-    if container.eq_ignore_ascii_case("CommonForms") || container.fold_lower() == "общиеформы"
-    {
-        return Some(FormKey { owner: None, form_name });
-    }
-    if conventional_of(container) == Some(Conv::Forms) && n >= 7 {
-        let object = parts[n - 6].to_string();
-        let mdo_type = module_path_type_from_segment(parts[n - 7])?.to_mdo_type()?;
-        return Some(FormKey { owner: Some((mdo_type, object)), form_name });
+    // EDT tree: `<F>/Module.bsl` or `<F>/Module.obsl` right under `Forms` / `CommonForms`.
+    if n >= 3 && conventional_of(parts[n - 1]).is_some_and(Conv::is_form_body) {
+        let form_name = parts[n - 2].to_string();
+        let container = parts[n - 3];
+        if is_common_forms(container) {
+            return Some(FormKey { owner: None, form_name });
+        }
+        if conventional_of(container) == Some(Conv::Forms) && n >= 5 {
+            let object = parts[n - 4].to_string();
+            let mdo_type = module_path_type_from_segment(parts[n - 5])?.to_mdo_type()?;
+            return Some(FormKey { owner: Some((mdo_type, object)), form_name });
+        }
     }
     None
 }
@@ -647,11 +665,18 @@ pub fn module_path_segment_modes(rel: &str) -> Option<Vec<bsl_conventions::Segme
     let normalized = rel.replace('\\', "/");
     let parts: Vec<&str> = normalized.split('/').collect();
     let at = |i: usize, name: Conv| conventional_of(parts[i]) == Some(name);
+    let body = |i: usize| conventional_of(parts[i]).is_some_and(Conv::is_module_body);
     match parts.len() {
         2 if at(0, Conv::Ext) => Some(vec![M::Ci, M::Ci]),
+        // EDT: `<Collection>/<Object>/ObjectModule.bsl`, `CommonForms/<F>/Module.obsl`.
+        3 if body(2) => Some(vec![M::Ci, M::Exact, M::Ci]),
         4 if at(2, Conv::Ext) => Some(vec![M::Ci, M::Exact, M::Ci, M::Ci]),
         5 if at(2, Conv::Ext) && at(3, Conv::Form) => {
             Some(vec![M::Ci, M::Exact, M::Ci, M::Ci, M::Ci])
+        }
+        // EDT: `<Collection>/<Object>/Forms/<F>/Module.(o)bsl`, `…/Commands/<C>/CommandModule.bsl`.
+        5 if (at(2, Conv::Forms) || at(2, Conv::Commands)) && body(4) => {
+            Some(vec![M::Ci, M::Exact, M::Ci, M::Exact, M::Ci])
         }
         6 if at(2, Conv::Commands) && at(4, Conv::Ext) => {
             Some(vec![M::Ci, M::Exact, M::Ci, M::Exact, M::Ci, M::Ci])
@@ -982,6 +1007,59 @@ mod tests {
                 form_name: "ФормаДокумента".to_string(),
             }),
         );
+    }
+
+    #[test]
+    fn parse_form_module_path_edt_layout() {
+        // EDT project tree: no `Ext/Form`, the module lies right in the form directory;
+        // `.obsl` marks an ordinary form, `.bsl` a managed one — same key either way.
+        for file in ["Module.obsl", "Module.bsl", "MODULE.OBSL"] {
+            let path = format!("src/Catalogs/Контрагенты/Forms/ФормаЭлемента/{file}");
+            assert_eq!(
+                parse_form_module_path(&path),
+                Some(FormKey {
+                    owner: Some((MdoType::Catalog, "Контрагенты".to_string())),
+                    form_name: "ФормаЭлемента".to_string(),
+                }),
+                "{path}"
+            );
+            let common = format!("C:/ws/src/CommonForms/ВыборПериода/{file}");
+            assert_eq!(
+                parse_form_module_path(&common),
+                Some(FormKey { owner: None, form_name: "ВыборПериода".to_string() }),
+                "{common}"
+            );
+        }
+        // Forms right under an unknown collection, or with a stray `forms` ancestor, are not forms.
+        assert_eq!(parse_form_module_path("Widgets/X/Forms/F/Module.obsl"), None);
+        assert_eq!(parse_form_module_path("tmp/forms/X/Module.obsl"), None);
+        assert_eq!(parse_form_module_path("Forms/F/Module.obsl"), None);
+        // Object and common modules of the EDT layout are not forms either.
+        assert_eq!(parse_form_module_path("Catalogs/X/ObjectModule.bsl"), None);
+        assert_eq!(parse_form_module_path("CommonModules/X/Module.bsl"), None);
+    }
+
+    #[test]
+    fn segment_modes_cover_edt_layout() {
+        use bsl_conventions::SegmentMatch as M;
+        assert_eq!(
+            module_path_segment_modes("Catalogs/Товары/ObjectModule.bsl"),
+            Some(vec![M::Ci, M::Exact, M::Ci])
+        );
+        assert_eq!(
+            module_path_segment_modes("CommonForms/Ф/Module.obsl"),
+            Some(vec![M::Ci, M::Exact, M::Ci])
+        );
+        assert_eq!(
+            module_path_segment_modes("Catalogs/Товары/Forms/Ф/Module.obsl"),
+            Some(vec![M::Ci, M::Exact, M::Ci, M::Exact, M::Ci])
+        );
+        assert_eq!(
+            module_path_segment_modes("Catalogs/Товары/Commands/К/CommandModule.bsl"),
+            Some(vec![M::Ci, M::Exact, M::Ci, M::Exact, M::Ci])
+        );
+        // a three-segment path whose file is not a module body is not a known layout
+        assert_eq!(module_path_segment_modes("Catalogs/Товары/Товары.mdo"), None);
     }
 
     #[test]

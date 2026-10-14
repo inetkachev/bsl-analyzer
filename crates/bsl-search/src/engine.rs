@@ -2884,7 +2884,7 @@ impl SearchEngine {
     /// attributed by different rules.
     pub fn workspace_file_key(&self, path: &Path) -> Option<FileKey> {
         let roots = self.workspace_roots.as_ref()?;
-        if !bsl_conventions::has_extension(path, bsl_conventions::BSL_EXTENSION) {
+        if !bsl_conventions::has_source_extension(path) {
             return None;
         }
         let (walked, canonical) = roots.spellings_of(path);

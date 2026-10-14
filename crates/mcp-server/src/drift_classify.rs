@@ -96,7 +96,7 @@ pub(crate) fn classify_drift(
             continue;
         }
         let is_xml = bsl_conventions::str_has_extension(&key, bsl_conventions::XML_EXTENSION);
-        let is_bsl = bsl_conventions::str_has_extension(&key, bsl_conventions::BSL_EXTENSION);
+        let is_bsl = bsl_conventions::str_has_source_extension(&key);
         if !is_xml && !is_bsl {
             continue;
         }

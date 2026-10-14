@@ -149,6 +149,18 @@ mod form_path_mirror_tests {
             "CommonModules/X/Ext/Module.bsl",
             "Catalogs/C/Forms/F/Ext/Form/Другой.bsl",
             "tmp/forms/X/Ext/Form/Module.bsl",
+            // EDT project tree (issue: EDT + .obsl)
+            "src/Catalogs/C/Forms/F/Module.obsl",
+            "src/Catalogs/C/Forms/F/Module.bsl",
+            "src/Catalogs/C/Forms/F/MODULE.OBSL",
+            "src/CommonForms/Ф/Module.obsl",
+            "src/CommonForms/Ф/Module.bsl",
+            "src/Catalogs/C/ObjectModule.bsl",
+            "src/CommonModules/X/Module.bsl",
+            "src/Catalogs/C/Forms/F/Form.oform",
+            "Widgets/X/Forms/F/Module.obsl",
+            "tmp/forms/X/Module.obsl",
+            "Forms/F/Module.obsl",
         ];
         for path in paths {
             let hir_says = hir::parse_form_module_path(path).is_some();

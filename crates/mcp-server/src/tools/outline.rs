@@ -174,7 +174,7 @@ fn resolve(
     // case and already serves the LSP server and the CLI, and a second procedure would differ
     // from it on exactly the inputs nobody tests.
     if !project_model::is_bsl_source_path(&abs) {
-        return Err(refuse("the path does not name a `.bsl` source file"));
+        return Err(refuse("the path does not name a BSL source file (`.bsl` or `.obsl`)"));
     }
     // Asked BEFORE the read, and about a REGULAR file. `read_to_string` reports a missing file
     // and a directory through the same error kind as an unreadable one, and answering either

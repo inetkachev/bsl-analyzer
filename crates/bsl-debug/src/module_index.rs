@@ -345,7 +345,7 @@ impl ModuleIndex {
             let entry = entry?;
             let path = entry.path();
 
-            let is_bsl = bsl_conventions::has_extension(&path, bsl_conventions::BSL_EXTENSION);
+            let is_bsl = bsl_conventions::has_source_extension(&path);
             if !is_bsl {
                 continue;
             }
@@ -387,7 +387,7 @@ impl ModuleIndex {
             let entry = entry?;
             let path = entry.path();
 
-            let is_bsl = bsl_conventions::has_extension(&path, bsl_conventions::BSL_EXTENSION);
+            let is_bsl = bsl_conventions::has_source_extension(&path);
             if !is_bsl {
                 continue;
             }

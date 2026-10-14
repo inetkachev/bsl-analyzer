@@ -1092,7 +1092,7 @@ impl ide::FusedChunkSink for FusedChunkWriter<'_> {
 fn bsl_module_total(stored_fp: &std::collections::HashMap<String, u64>) -> usize {
     stored_fp
         .keys()
-        .filter(|p| bsl_conventions::str_has_extension(p, bsl_conventions::BSL_EXTENSION))
+        .filter(|p| bsl_conventions::str_has_source_extension(p))
         .count()
 }
 
@@ -5942,7 +5942,9 @@ mod tests {
                     continue;
                 }
                 match entry.path().extension().and_then(|e| e.to_str()) {
-                    Some("bsl") | Some("xml") => {}
+                    Some(ext)
+                        if bsl_conventions::is_source_extension(ext)
+                            || ext.eq_ignore_ascii_case(bsl_conventions::XML_EXTENSION) => {}
                     _ => continue,
                 }
                 let path =

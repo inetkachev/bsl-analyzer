@@ -1,6 +1,8 @@
 use std::path::Path;
 
-pub const SOURCE_EXTENSIONS: &[&str] = &[bsl_conventions::BSL_EXTENSION];
+/// Module bodies: `.bsl` and, in an EDT tree, the ordinary-form `.obsl`
+/// (`bsl_conventions::SOURCE_EXTENSIONS` is the one list every scan shares).
+pub const SOURCE_EXTENSIONS: &[&str] = bsl_conventions::SOURCE_EXTENSIONS;
 
 pub const METADATA_WATCHED_EXTENSIONS: &[&str] = &[bsl_conventions::XML_EXTENSION];
 
@@ -58,20 +60,23 @@ pub fn is_substrate_listed_body_path(path: &Path) -> bool {
     })
 }
 
-/// The `<Family>` directory name for a `<Family>/<Name>/Ext/Module.bsl` layout, if
-/// `path` matches it.
+/// The `<Family>` directory name for a `<Family>/<Name>/Ext/Module.bsl` (designer
+/// export) or `<Family>/<Name>/Module.bsl` (EDT project) layout, if `path` matches
+/// one of them.
 fn substrate_listed_family(path: &Path) -> Option<&str> {
     use bsl_conventions::{conventional_of, ConventionalName};
     let file = path.file_name().and_then(|n| n.to_str())?;
     if conventional_of(file) != Some(ConventionalName::Module) {
         return None;
     }
-    let ext_dir = path.parent()?;
-    let ext = ext_dir.file_name().and_then(|n| n.to_str())?;
-    if conventional_of(ext) != Some(ConventionalName::Ext) {
-        return None;
-    }
-    ext_dir.parent()?.parent()?.file_name().and_then(|n| n.to_str())
+    let parent = path.parent()?;
+    let parent_name = parent.file_name().and_then(|n| n.to_str())?;
+    let object_dir = if conventional_of(parent_name) == Some(ConventionalName::Ext) {
+        parent.parent()?
+    } else {
+        parent
+    };
+    object_dir.parent()?.file_name().and_then(|n| n.to_str())
 }
 
 #[cfg(test)]
@@ -104,6 +109,28 @@ mod tests {
     fn classifies_bsl_as_source() {
         assert_eq!(file_role(Path::new("/ws/CommonModules/X/Ext/Module.bsl")), FileRole::Source);
         assert!(is_bsl_source_path(Path::new("/ws/a.bsl")));
+    }
+
+    #[test]
+    fn classifies_edt_ordinary_form_module_as_source() {
+        assert_eq!(
+            file_role(Path::new("/ws/src/Catalogs/C/Forms/F/Module.obsl")),
+            FileRole::Source
+        );
+        assert!(is_bsl_source_path(Path::new("/ws/src/CommonForms/F/MODULE.OBSL")));
+        // the binary container next to it is neither source nor watched metadata
+        assert_eq!(file_role(Path::new("/ws/src/Catalogs/C/Forms/F/Form.oform")), FileRole::Ignored);
+    }
+
+    #[test]
+    fn edt_layout_bodies_are_substrate_listed_without_ext() {
+        assert!(is_substrate_listed_body_path(Path::new("/ws/src/CommonModules/X/Module.bsl")));
+        assert!(is_common_module_body_path(Path::new("/ws/src/CommonModules/X/Module.bsl")));
+        assert!(is_substrate_listed_body_path(Path::new("/ws/src/HTTPServices/S/Module.bsl")));
+        // EDT forms and object modules still resolve their owner by layout
+        assert!(!is_substrate_listed_body_path(Path::new("/ws/src/Catalogs/C/Forms/F/Module.bsl")));
+        assert!(!is_substrate_listed_body_path(Path::new("/ws/src/CommonForms/F/Module.obsl")));
+        assert!(!is_substrate_listed_body_path(Path::new("/ws/src/Catalogs/C/ObjectModule.bsl")));
     }
 
     #[test]

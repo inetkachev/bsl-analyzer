@@ -746,7 +746,7 @@ fn entry_touches_scan_universe(entry: &ChangeEntry) -> bool {
         return true;
     }
     let is_scan_ext = |path: &Path| {
-        bsl_conventions::has_extension(path, bsl_conventions::BSL_EXTENSION)
+        bsl_conventions::has_source_extension(path)
             || bsl_conventions::has_extension(path, bsl_conventions::XML_EXTENSION)
     };
     is_scan_ext(&entry.canonical) || is_scan_ext(&entry.raw) || entry_is_config_file(entry)

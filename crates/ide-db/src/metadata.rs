@@ -1850,7 +1850,12 @@ pub fn get_module_type_from_uri(file_uri: &str) -> Option<bsl_metadata::ModuleTy
 
     use bsl_conventions::{conventional_of, ConventionalName as Conv};
     let last_kind = conventional_of(parts[parts.len() - 1]);
-    if parts.len() >= 2 && conventional_of(parts[parts.len() - 2]) == Some(Conv::Ext) {
+    // Designer export keeps the top-level modules under `Ext/`; an EDT tree keeps them in
+    // `Configuration/` (`src/Configuration/SessionModule.bsl`).
+    let under_service_level = parts.len() >= 2
+        && (conventional_of(parts[parts.len() - 2]) == Some(Conv::Ext)
+            || parts[parts.len() - 2].eq_ignore_ascii_case("Configuration"));
+    if under_service_level {
         match last_kind {
             Some(Conv::ManagedApplicationModule) => {
                 return Some(bsl_metadata::ModuleType::ManagedApplicationModule);
@@ -1893,6 +1898,24 @@ pub fn get_module_type_from_uri(file_uri: &str) -> Option<bsl_metadata::ModuleTy
         return Some(bsl_metadata::ModuleType::FormModule);
     }
 
+    // EDT-проект: модуль лежит прямо в каталоге формы — `…/Forms/<Форма>/Module.bsl`
+    // (управляемая) или `…/Forms/<Форма>/Module.obsl` (обычная), общие формы —
+    // `CommonForms/<Форма>/Module.(o)bsl`. Коллекция перед `Forms` должна быть
+    // известной, как и в hir-def (`parse_form_module_path`).
+    if parts.len() >= 3 && last_kind.is_some_and(Conv::is_form_body) {
+        let container = parts[parts.len() - 3];
+        if container.eq_ignore_ascii_case("CommonForms") || container.fold_lower() == "общиеформы" {
+            return Some(bsl_metadata::ModuleType::FormModule);
+        }
+        if parts.len() >= 5
+            && conventional_of(container) == Some(Conv::Forms)
+            && module_collection(parts[parts.len() - 5])
+                .is_some_and(|c| matches!(c, ModuleCollection::Mdo(_)))
+        {
+            return Some(bsl_metadata::ModuleType::FormModule);
+        }
+    }
+
     // Everything else lives in a collection, and the shape of that path has exactly
     // one specification. Deciding by "does some ancestor look like a collection"
     // let a directory far up the path take the type, and deciding by segment count
@@ -1910,9 +1933,11 @@ pub fn get_module_type_from_uri(file_uri: &str) -> Option<bsl_metadata::ModuleTy
     // still object/manager modules, and the file name says so; what the unknown
     // collection costs is the shape evidence, so the SERVICE level has to supply it.
     // Without either the path is just a file that happens to be named `ObjectModule.bsl`.
+    // In an EDT tree there is no service level: `<Collection>/<Object>/ObjectModule.bsl`
+    // — the object directory and the collection above it are the shape evidence.
     let has_service_level =
         parts.len() >= 2 && conventional_of(parts[parts.len() - 2]) == Some(Conv::Ext);
-    if has_service_level && parts.len() >= 4 {
+    if (has_service_level && parts.len() >= 4) || (!has_service_level && parts.len() >= 3) {
         return match last_kind {
             Some(Conv::ObjectModule) => Some(bsl_metadata::ModuleType::ObjectModule),
             Some(Conv::ManagerModule) => Some(bsl_metadata::ModuleType::ManagerModule),

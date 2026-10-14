@@ -281,6 +281,9 @@ pub fn module_base_env(metadata: &ModuleMetadata, opts: &EnvOptions) -> EnvFlags
             Some(cm) => common_module_env(cm, opts),
             None => EnvFlags::EMPTY,
         },
+        // An ordinary (thick-client) form runs entirely in the ordinary
+        // application: no directives, no server side.
+        ModuleType::FormModule if is_ordinary_form(metadata) => EnvFlags::THICK_CLIENT_ORDINARY,
         // Form and command methods pick client or server per directive; the
         // module as a whole spans both.
         ModuleType::FormModule | ModuleType::CommandModule => opts.client_envs() | EnvFlags::SERVER,
@@ -384,7 +387,19 @@ pub fn body_env(
     if directive.is_none() && annotations.iter().any(|a| !is_compilation_directive(a)) {
         return base;
     }
+    // An ordinary form has no `&НаСервере` default: its methods carry no
+    // directives and run where the module runs.
+    if directive.is_none() && is_ordinary_form(metadata) {
+        return base;
+    }
     base & directive_env(directive, metadata.module_type, opts)
+}
+
+/// A form module whose loaded form metadata says the form is ordinary (thick
+/// client). Without form metadata a form module is taken for a managed one.
+fn is_ordinary_form(metadata: &ModuleMetadata) -> bool {
+    metadata.module_type == ModuleType::FormModule
+        && metadata.form.as_ref().is_some_and(|f| f.is_ordinary())
 }
 
 /// Environment set of module-level code (top-level statements and variable
@@ -523,6 +538,29 @@ mod tests {
     const CLIENTS: EnvFlags = EnvFlags(
         EnvFlags::THIN_CLIENT.0 | EnvFlags::WEB_CLIENT.0 | EnvFlags::THICK_CLIENT_MANAGED.0,
     );
+
+    fn ordinary_form_metadata() -> ModuleMetadata {
+        let mut md = ModuleMetadata::unknown(ModuleType::FormModule);
+        md.form = Some(Arc::new(bsl_metadata::Form::new(
+            "ФормаЭлемента".to_string(),
+            bsl_metadata::FormType::Ordinary,
+            Default::default(),
+        )));
+        md
+    }
+
+    #[test]
+    fn ordinary_form_module_runs_in_the_thick_ordinary_client_only() {
+        let opts = EnvOptions::default();
+        let md = ordinary_form_metadata();
+        assert_eq!(module_base_env(&md, &opts), EnvFlags::THICK_CLIENT_ORDINARY);
+        // no `&НаСервере` default: an undirected method runs where the module runs
+        assert_eq!(body_env(&md, &[], &opts), EnvFlags::THICK_CLIENT_ORDINARY);
+        assert_eq!(module_code_env(&md, &opts), EnvFlags::THICK_CLIENT_ORDINARY);
+        // a managed form (or one whose metadata did not load) keeps the managed set
+        let managed = form_metadata();
+        assert_eq!(body_env(&managed, &[], &opts), EnvFlags::SERVER);
+    }
 
     #[test]
     fn form_module_directives() {

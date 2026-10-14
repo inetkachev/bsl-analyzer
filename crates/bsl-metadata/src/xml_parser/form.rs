@@ -232,7 +232,34 @@ fn collect_child_items(
     }
 }
 
+/// An EDT-tree form module — `…/Forms/<Форма>/Module.bsl` with a sibling `Form.form`
+/// (managed) or `…/Forms/<Форма>/Module.obsl` (ordinary; the binary `Form.oform` next
+/// to it is never read) — has no `Ext/Form.xml` to parse. The module file name says
+/// which kind the form is; the name is the form directory. Elements, handlers and the
+/// uuid come with the EDT metadata reader (`Form.form`, owner `.mdo`); until then the
+/// form is a bare `Form` of the right kind, which is what the execution environment
+/// and the form-module classifiers need.
+fn edt_form_from_module_path(bsl_path: &std::path::Path) -> Option<Form> {
+    use bsl_conventions::{conventional_of, ConventionalName as Conv};
+    let file = bsl_path.file_name()?.to_str()?;
+    let dir = bsl_path.parent()?;
+    let form_name = dir.file_name()?.to_str()?;
+    let form_type = match conventional_of(file)? {
+        Conv::ModuleObsl => FormType::Ordinary,
+        Conv::Module
+            if bsl_conventions::find_child_ci(dir, Conv::FormForm.canonical()).is_some() =>
+        {
+            FormType::Managed
+        }
+        _ => return None,
+    };
+    Some(Form::new(form_name.to_string(), form_type, uuid::Uuid::nil()))
+}
+
 pub fn parse_form_from_bsl_path(bsl_path: &std::path::Path) -> Result<Form> {
+    if let Some(form) = edt_form_from_module_path(bsl_path) {
+        return Ok(form);
+    }
     let mut forms_dir = bsl_path.to_path_buf();
 
     for _ in 0..4 {
@@ -361,6 +388,34 @@ fn parse_form_metadata_xml(xml: &str) -> Result<FormMetadataInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edt_tree_form_module_yields_a_bare_form_of_the_right_kind() {
+        let dir = tempfile::tempdir().unwrap();
+        let forms = dir.path().join("src/Catalogs/Контрагенты/Forms");
+        // ordinary: Module.obsl next to a binary Form.oform
+        let ordinary = forms.join("ФормаЭлемента");
+        std::fs::create_dir_all(&ordinary).unwrap();
+        std::fs::write(ordinary.join("Form.oform"), b"\x00binary").unwrap();
+        std::fs::write(ordinary.join("Module.obsl"), "Процедура ПриОткрытии()\nКонецПроцедуры\n").unwrap();
+        let form = parse_form_from_bsl_path(&ordinary.join("Module.obsl")).unwrap();
+        assert_eq!(form.name(), "ФормаЭлемента");
+        assert_eq!(form.form_type(), FormType::Ordinary);
+        assert!(form.elements().is_empty());
+        // managed: Module.bsl next to Form.form
+        let managed = forms.join("ФормаВыбора");
+        std::fs::create_dir_all(&managed).unwrap();
+        std::fs::write(managed.join("Form.form"), "<form:Form/>").unwrap();
+        std::fs::write(managed.join("Module.bsl"), "").unwrap();
+        let form = parse_form_from_bsl_path(&managed.join("Module.bsl")).unwrap();
+        assert_eq!(form.name(), "ФормаВыбора");
+        assert_eq!(form.form_type(), FormType::Managed);
+        // a lone Module.bsl without Form.form is not an EDT form: the designer path runs and fails
+        let lone = forms.join("Одинокая");
+        std::fs::create_dir_all(&lone).unwrap();
+        std::fs::write(lone.join("Module.bsl"), "").unwrap();
+        assert!(parse_form_from_bsl_path(&lone.join("Module.bsl")).is_err());
+    }
 
     #[test]
     fn test_parse_managed_form() {
